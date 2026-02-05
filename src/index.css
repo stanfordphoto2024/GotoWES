@@ -68,11 +68,13 @@ body::before {
 }
 
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+  display: none !important;
 }
 .no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+  /* 針對 iOS Safari 隱藏滾動條 */
+  -webkit-overflow-scrolling: touch;
 }
 
 .scroller-mask {
