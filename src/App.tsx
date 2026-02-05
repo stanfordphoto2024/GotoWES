@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Car, Bike, Footprints, Navigation, Clock, ShieldAlert, ChevronUp, ChevronDown } from 'lucide-react';
+import { Car, Bike, Footprints, Navigation, Clock, ShieldAlert } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -12,7 +12,7 @@ function cn(...inputs: ClassValue[]) {
 /** Calibrated time from drop-off to desk (in seconds) */
 const WALKING_TO_CLASSROOM = 55;
 /** Default parking/unloading buffer for driving (in seconds) */
-const PARKING_BUFFER = 300;
+const PARKING_BUFFER = 120; // 改為 2 分鐘 (120秒)
 /** Default school start time goal */
 const DEFAULT_GOAL_TIME = "08:15";
 /** Destination: Woodside Elementary School */
@@ -63,24 +63,8 @@ function VerticalTimeScroller({ value, max, onChange }: TimeScrollerProps) {
     }
   };
 
-  const step = (dir: number) => {
-    if (!scrollRef.current) return;
-    const currentScroll = scrollRef.current.scrollTop;
-    scrollRef.current.scrollTo({ 
-      top: currentScroll + (dir * itemHeight), 
-      behavior: 'smooth' 
-    });
-  };
-
   return (
     <div className="flex flex-col items-center group">
-      <button 
-        onClick={() => step(-1)}
-        className="p-1 opacity-10 group-hover:opacity-100 transition-opacity hover:text-vibrant-blue"
-      >
-        <ChevronUp size={24} />
-      </button>
-      
       <div className="relative h-16 w-24 overflow-hidden">
         <div 
           ref={scrollRef}
@@ -102,13 +86,6 @@ function VerticalTimeScroller({ value, max, onChange }: TimeScrollerProps) {
           ))}
         </div>
       </div>
-
-      <button 
-        onClick={() => step(1)}
-        className="p-1 opacity-10 group-hover:opacity-100 transition-opacity hover:text-vibrant-blue"
-      >
-        <ChevronDown size={24} />
-      </button>
     </div>
   );
 }
@@ -161,10 +138,12 @@ export default function App() {
     const activeMode = targetMode || mode;
     
     const getMockTraffic = (m: TransportMode) => {
+      // 根據使用者回饋修正 Mock 數據，使其更接近 Google Maps 實際情況 (約 7 分鐘)
+      // 7 分鐘 = 420 秒
       const mockTrafficValues: Record<TransportMode, number> = {
-        driving: 900 + Math.random() * 300,
-        bicycling: 1200 + Math.random() * 200,
-        walking: 2400 + Math.random() * 400
+        driving: 360 + Math.random() * 120,    // 6~8 分鐘 (平均 7 分)
+        bicycling: 600 + Math.random() * 180,  // 10~13 分鐘
+        walking: 1200 + Math.random() * 300    // 20~25 分鐘
       };
       return mockTrafficValues[m];
     };
@@ -244,9 +223,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative z-10">
+    <div className="min-h-screen flex flex-col items-center p-6 pt-12 pb-20 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative z-10">
       {/* Main Glass Dashboard */}
-      <main className="w-full space-y-8 mt-6">
+      <main className="w-full space-y-8">
         
         {/* Time Picker Section (Vertical Scroller) */}
         <section className="glass rounded-[2.5rem] p-10 text-center relative overflow-hidden group">
@@ -331,7 +310,7 @@ export default function App() {
               <div className="flex justify-center items-center gap-3 opacity-30 text-[8px] font-bold tracking-widest uppercase mt-4 text-white">
                 <span>Traffic {Math.floor(travelTime / 60)}m</span>
                 <div className="w-1 h-1 rounded-full bg-white/50" />
-                <span>Buffer {mode === 'driving' ? '5m' : '0m'}</span>
+                <span>Buffer {mode === 'driving' ? '2m' : '0m'}</span>
                 <div className="w-1 h-1 rounded-full bg-white/50" />
                 <span>Walk 55s</span>
               </div>

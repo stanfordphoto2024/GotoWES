@@ -6,34 +6,55 @@
   color-scheme: dark;
 }
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
   min-height: 100vh;
-  /* 將焦點調至 75%，使招牌向反方向（左側）移動，以對齊 Driving 按鈕 */
-  background: url('/wes.png') no-repeat 70% center fixed;
-  background-size: cover;
+  min-height: -webkit-fill-available;
+  /* 允許捲動，防止內容被遮擋 */
+  overflow-y: auto;
   overflow-x: hidden;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  /* 取消居中對齊，改用頂部對齊配合 padding */
+  display: block;
 }
 
 body::before {
   content: "";
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  /* 極簡深色遮罩，增加文字可讀性同時保持背景招牌清晰 */
-  background: radial-gradient(
-    circle at center,
-    rgba(0, 0, 0, 0.1) 0%,
-    rgba(0, 0, 0, 0.4) 100%
-  );
-  backdrop-filter: blur(0.5px); /* 近乎無模糊，確保背景細節清晰 */
+  /* 使用 inset: 0 並稍微溢出，防止瀏覽器網址列伸縮時出現白邊 */
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  
+  /* 鎖定背景不隨視窗縮放 */
+  background: 
+    radial-gradient(
+      circle at center,
+      rgba(0, 0, 0, 0.1) 0%,
+      rgba(0, 0, 0, 0.4) 100%
+    ),
+    url('/wes.png') no-repeat 68% center;
+  background-size: cover;
+  
+  /* 硬體加速與性能優化 */
   z-index: -1;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+  
+  /* 模糊效果 */
+  backdrop-filter: blur(0.5px);
+  -webkit-backdrop-filter: blur(0.5px);
 }
 
 .glass {
