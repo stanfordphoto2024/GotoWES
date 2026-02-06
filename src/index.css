@@ -15,46 +15,15 @@ html, body {
 }
 
 body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
   min-height: 100vh;
-  min-height: -webkit-fill-available;
-  /* 允許捲動，防止內容被遮擋 */
+  overscroll-behavior: none;
   overflow-y: auto;
   overflow-x: hidden;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  /* 取消居中對齊，改用頂部對齊配合 padding */
-  display: block;
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  /* 使用 inset: 0 並稍微溢出，防止瀏覽器網址列伸縮時出現白邊 */
-  top: -10px;
-  left: -10px;
-  right: -10px;
-  bottom: -10px;
-  
-  /* 鎖定背景不隨視窗縮放 */
-  background: 
-    radial-gradient(
-      circle at center,
-      rgba(0, 0, 0, 0.1) 0%,
-      rgba(0, 0, 0, 0.4) 100%
-    ),
-    url('/wes.png') no-repeat 68% center;
-  background-size: cover;
-  
-  /* 硬體加速與性能優化 */
-  z-index: -1;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  will-change: transform;
-  
-  /* 模糊效果 */
-  backdrop-filter: blur(0.5px);
-  -webkit-backdrop-filter: blur(0.5px);
+  background-color: #000;
 }
 
 .glass {

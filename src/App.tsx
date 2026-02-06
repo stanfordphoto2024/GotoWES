@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Car, Bike, Footprints, Navigation, Clock, ShieldAlert } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import AnimatedHourglass from './components/AnimatedHourglass';
 
 /** Utility for Tailwind class merging */
 function cn(...inputs: ClassValue[]) {
@@ -17,8 +18,28 @@ const PARKING_BUFFER = 120; // 改為 2 分鐘 (120秒)
 const DEFAULT_GOAL_TIME = "08:15";
 /** Destination: Woodside Elementary School */
 const DESTINATION_ADDRESS = "3195 Woodside Rd, Woodside, CA 94062";
+/** Destination Coordinates */
+const DESTINATION_COORDS = { lat: 37.4277608, lng: -122.259141 };
 
 type TransportMode = 'driving' | 'bicycling' | 'walking';
+
+/** 
+ * Calculate distance between two points using Haversine formula (in meters)
+ */
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
 
 interface TimeScrollerProps {
   value: number;
@@ -95,10 +116,102 @@ export default function App() {
   const [goalHour, setGoalHour] = useState(8);
   const [goalMinute, setGoalMinute] = useState(15);
   const [mode, setMode] = useState<TransportMode>('driving');
-  const [travelTime, setTravelTime] = useState<number | null>(null); // in seconds
-  const [departureTime, setDepartureTime] = useState<Date | null>(null);
+  const [allTravelTimes, setAllTravelTimes] = useState<Record<TransportMode, number | null>>({
+    driving: null,
+    bicycling: null,
+    walking: null
+  });
+  
+  // Use a ref to store the "fallback" defaults to show when real data is null
+  const fallbackTimes = {
+    driving: 360,
+    bicycling: 540,
+    walking: 1980
+  };
+
+  const travelTime = allTravelTimes[mode] || fallbackTimes[mode];
+  const [departureTime, setDepartureTime] = useState<Date | null>(() => {
+    // Initial calculation based on defaults
+    const goalDate = new Date();
+    goalDate.setHours(8, 15, 0, 0); 
+    
+    // If 08:15 has already passed today, assume it's for tomorrow
+    if (goalDate.getTime() < Date.now()) {
+      goalDate.setDate(goalDate.getDate() + 1);
+    }
+
+    const trafficSecs = mode === 'driving' ? 360 : (mode === 'bicycling' ? 540 : 1980);
+    const modeBuffer = mode === 'driving' ? 120 : 0;
+    const totalDeduction = Math.round(trafficSecs + 55 + modeBuffer);
+    return new Date(goalDate.getTime() - totalDeduction * 1000);
+  });
   const [countdown, setCountdown] = useState<string>('');
+  const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState<'loading' | 'ready' | 'error' | 'none'>('none');
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [systemLogs, setSystemLogs] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+
+  const addLog = (msg: string) => {
+    setSystemLogs(prev => [msg, ...prev].slice(0, 5));
+    console.log(`[SYS]: ${msg}`);
+  };
+
+  /**
+   * Dynamically load Google Maps SDK
+   */
+  useEffect(() => {
+    const checkGoogle = () => {
+      if (typeof google !== 'undefined' && google.maps && google.maps.DistanceMatrixService) {
+        setIsGoogleLoaded(true);
+        setGoogleStatus('ready');
+        addLog("Google SDK Ready");
+        return true;
+      }
+      return false;
+    };
+
+    if (checkGoogle()) return;
+
+    setGoogleStatus('loading');
+    addLog("Loading Google SDK...");
+    
+    const apiKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      setGoogleStatus('error');
+      setApiError("API Key Missing");
+      addLog("Error: API Key Missing");
+      return;
+    }
+
+    const scriptId = 'google-maps-sdk';
+    if (document.getElementById(scriptId)) {
+      // If script exists but checkGoogle failed, wait a bit
+      const timer = setInterval(() => {
+        if (checkGoogle()) clearInterval(timer);
+      }, 500);
+      return () => clearInterval(timer);
+    }
+
+    const script = document.createElement('script');
+    script.id = scriptId;
+    (window as any).initGoogleMaps = () => {
+      checkGoogle();
+    };
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,places&callback=initGoogleMaps`;
+    script.async = true;
+    script.defer = true;
+    script.onerror = () => {
+      setGoogleStatus('error');
+      addLog("SDK Load Failed");
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  const [lastApiUpdate, setLastApiUpdate] = useState<Date | null>(null);
 
   /**
    * Sync goalTime string whenever hour or minute changes
@@ -112,78 +225,184 @@ export default function App() {
    * MATHEMATICAL LOGIC: calculateDepartureTime()
    * 
    * Formula: RequiredDeparture = GoalTime - RealTimeTraffic - WALKING_TO_CLASSROOM - ModeBuffer
-   * 
-   * Algebra explanation for students:
-   * 1. Variable A (GoalTime): The time you must be at your desk (e.g., 08:15).
-   * 2. Variable B (RealTimeTraffic): Navigation estimate from current location (seconds).
-   * 3. Variable C (WALKING_TO_CLASSROOM): Fixed walk from drop-off to classroom (55s).
-   * 4. Variable D (ModeBuffer): Buffer for parking/locking (Driving: 300s, others: 0s).
-   * 
-   * Process: Departure = A - (B + C + D)
-   * Note: Time is base-60; we convert to total seconds from midnight for precision.
    */
-  const calculateDepartureTime = useCallback((trafficSecs: number) => {
+  const calculateDepartureTime = useCallback((trafficSecs: number, targetMode?: TransportMode) => {
+    const now = new Date();
     const goalDate = new Date();
     goalDate.setHours(goalHour, goalMinute, 0, 0);
 
-    const modeBuffer = mode === 'driving' ? PARKING_BUFFER : 0;
+    // If goal time has already passed today, assume it's for tomorrow
+    if (goalDate.getTime() < now.getTime()) {
+      goalDate.setDate(goalDate.getDate() + 1);
+    }
+
+    const activeMode = targetMode || mode;
+    const modeBuffer = activeMode === 'driving' ? PARKING_BUFFER : 0;
     const totalDeduction = Math.round(trafficSecs + WALKING_TO_CLASSROOM + modeBuffer);
     
     const departure = new Date(goalDate.getTime() - totalDeduction * 1000);
     setDepartureTime(departure);
+    console.log(`🕒 New Departure Set: ${departure.toLocaleTimeString()} (based on ${trafficSecs}s)`);
   }, [goalHour, goalMinute, mode]);
 
-  /** Mock fetch for travel time - now supports immediate updates */
-  const updateTrafficData = useCallback((targetMode?: TransportMode) => {
-    const activeMode = targetMode || mode;
-    
-    const getMockTraffic = (m: TransportMode) => {
-      // 根據使用者回饋修正 Mock 數據，使其更接近 Google Maps 實際情況 (約 7 分鐘)
-      // 7 分鐘 = 420 秒
-      const mockTrafficValues: Record<TransportMode, number> = {
-        driving: 360 + Math.random() * 120,    // 6~8 分鐘 (平均 7 分)
-        bicycling: 600 + Math.random() * 180,  // 10~13 分鐘
-        walking: 1200 + Math.random() * 300    // 20~25 分鐘
-      };
-      return mockTrafficValues[m];
-    };
+  const lastGoogleFetchTime = useRef<number>(0);
+  const lastCoords = useRef<{ lat: number, lng: number } | null>(null);
 
-    // Immediate calculation with mock to ensure zero-latency UI
-    const mock = getMockTraffic(activeMode);
-    setTravelTime(mock);
-    calculateDepartureTime(mock);
+  /**
+   * Fetch travel time from Google Maps or fallback to distance calculation
+   */
+  const updateTrafficData = useCallback((targetMode?: TransportMode, forcedCoords?: { lat: number, lng: number }) => {
+    const now = Date.now();
+    const origin = forcedCoords || userCoords;
 
-    // Background refinement if geolocation is available
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          // In a real app, this would use Google Distance Matrix API with the new mode
-          // For now, we refine the mock slightly to simulate a "live" update
-          const refinedMock = getMockTraffic(activeMode);
-          setTravelTime(refinedMock);
-          calculateDepartureTime(refinedMock);
-          setLocationError(null);
-        },
-        (err) => {
-          setLocationError("Using default location (Traffic estimated)");
-        },
-        { timeout: 5000 }
-      );
-    } else {
-      setLocationError("Geolocation not supported");
+    if (!origin) {
+      addLog("Wait: No GPS");
+      return;
     }
-  }, [mode, calculateDepartureTime]);
+
+    if (!isGoogleLoaded) {
+      addLog("Wait: No SDK");
+      return;
+    }
+
+    // Check if position significantly moved (more than 5 meters) or forced or first time
+    const hasMoved = !lastCoords.current || calculateDistance(origin.lat, origin.lng, lastCoords.current.lat, lastCoords.current.lng) > 5;
+    const isFirstTime = !lastApiUpdate;
+    const isForced = !!targetMode || !!forcedCoords || isFirstTime;
+
+    if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < 5000)) {
+      return;
+    }
+
+    lastCoords.current = origin;
+    lastGoogleFetchTime.current = now;
+
+    // --- TIMEOUT PROTECTION ---
+    const timeoutId = setTimeout(() => {
+      addLog(`ERR: API Timeout (8s)`);
+    }, 8000);
+
+    const lat = origin.lat.toFixed(4);
+    const lng = origin.lng.toFixed(4);
+    addLog(`API Req @ ${lat},${lng}`);
+    
+    try {
+      if (!google.maps.DistanceMatrixService) {
+        addLog("ERR: No DM Service");
+        return;
+      }
+      
+      const service = new google.maps.DistanceMatrixService();
+      const originLatLng = new google.maps.LatLng(origin.lat, origin.lng);
+      const destLatLng = new google.maps.LatLng(DESTINATION_COORDS.lat, DESTINATION_COORDS.lng);
+
+      const modesToFetch = [
+        { m: 'driving', g: 'DRIVING' },
+        { m: 'bicycling', g: 'BICYCLING' },
+        { m: 'walking', g: 'WALKING' }
+      ];
+
+      modesToFetch.forEach(({ m, g }, index) => {
+        setTimeout(() => {
+          addLog(`> Fetching ${m}...`);
+          service.getDistanceMatrix({
+            origins: [originLatLng],
+            destinations: [destLatLng],
+            travelMode: g as any,
+            drivingOptions: m === 'driving' ? {
+              departureTime: new Date(),
+              trafficModel: 'pessimistic' as any
+            } : undefined
+          }, (response, status) => {
+            // 無論成功失敗，只要有回應就記錄狀態碼
+            if (status !== 'OK') {
+              addLog(`${m} Status: ${status}`);
+              setApiError(`Google: ${status}`);
+              return;
+            }
+
+            if (response && response.rows[0].elements[0].status === 'OK') {
+              clearTimeout(timeoutId);
+              const element = response.rows[0].elements[0];
+              const duration = element.duration_in_traffic || element.duration;
+              const durationValue = duration.value;
+              
+              addLog(`${m}: ${Math.round(durationValue/60)}m OK`);
+              
+              setAllTravelTimes(prev => {
+                const updated = { ...prev, [m as TransportMode]: durationValue };
+                if (m === (targetMode || mode)) {
+                  calculateDepartureTime(durationValue, m as TransportMode);
+                }
+                return updated;
+              });
+              setLastApiUpdate(new Date());
+              setApiError(null);
+            } else {
+              const elementStatus = response?.rows[0]?.elements[0]?.status || 'UNKNOWN';
+              addLog(`${m} Element: ${elementStatus}`);
+              setApiError(`Data: ${elementStatus}`);
+            }
+          });
+        }, index * 500); // 增加間隔到 0.5s 避免觸發頻率限制
+      });
+    } catch (err: any) {
+      addLog(`API Error: ${err.message}`);
+      setApiError(`API Error: ${err.message}`);
+    }
+  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded, lastApiUpdate]);
 
   const handleModeChange = (m: TransportMode) => {
     setMode(m);
-    // Force an immediate update for the new mode without waiting for the next interval
+    // If we have data for the new mode, update departure time immediately
+    if (allTravelTimes[m]) {
+      calculateDepartureTime(allTravelTimes[m]!, m);
+    }
+    // Still trigger an update to ensure it's fresh
     updateTrafficData(m);
   };
 
-  // Initial calculation and interval
+  // Geolocation watch
   useEffect(() => {
-    updateTrafficData();
-    const interval = setInterval(updateTrafficData, 20000);
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation not supported");
+      setUserCoords({ lat: 37.4299, lng: -122.2539 });
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const newCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setUserCoords(newCoords);
+        setLocationError(null);
+      },
+      (error) => {
+        console.warn("Geolocation watch error:", error);
+        if (!userCoords) {
+          setUserCoords({ lat: 37.4299, lng: -122.2539 });
+          setLocationError("Using fallback location (Woodside Center)");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []); // Only once on mount
+
+  // Trigger traffic update whenever coordinates or mode changes
+  useEffect(() => {
+    if (userCoords && isGoogleLoaded) {
+      console.log("📍 Location & SDK Ready - Triggering Initial/Updated Fetch");
+      updateTrafficData();
+    }
+  }, [userCoords, isGoogleLoaded, mode, updateTrafficData]);
+
+  // Regular interval for live updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      updateTrafficData();
+    }, 1000); // 每一秒檢查一次，但 updateTrafficData 內部會處理節流
+
     return () => clearInterval(interval);
   }, [updateTrafficData]);
 
@@ -204,9 +423,11 @@ export default function App() {
       
       if (diff <= 0) {
         setCountdown("Time to leave!");
+        setTimeRemainingSeconds(0);
         return;
       }
 
+      setTimeRemainingSeconds(Math.floor(diff / 1000));
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
@@ -222,17 +443,43 @@ export default function App() {
     window.open(url, '_blank');
   };
 
+  const formatDuration = (seconds: number | null) => {
+    if (seconds === null) return '--';
+    const mins = Math.ceil(seconds / 60);
+    return `${mins}m`;
+  };
+
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 pt-12 pb-20 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative z-10">
+    <div className="min-h-screen flex flex-col items-center p-6 pt-12 pb-20 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative">
+      {/* Fixed Background Layer */}
+      <div 
+        className="fixed z-0 pointer-events-none overflow-hidden"
+        style={{
+          top: '-10%',
+          left: '-10%',
+          right: '-10%',
+          bottom: '-10%',
+          width: '120%',
+          height: '120%',
+          background: `
+            radial-gradient(circle at center, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%),
+            url('/wes.png') no-repeat 68% center
+          `,
+          backgroundSize: 'cover',
+          backgroundAttachment: 'scroll',
+          transform: 'translate3d(0,0,0)',
+        }}
+      />
+      
       {/* Main Glass Dashboard */}
-      <main className="w-full space-y-8">
+      <main className="w-full space-y-8 relative z-10">
         
         {/* Time Picker Section (Vertical Scroller) */}
         <section className="glass rounded-[2.5rem] p-10 text-center relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
           <label className="text-[10px] font-black opacity-40 mb-8 block tracking-[0.5em] uppercase text-white">Arrival Goal</label>
           
-          <div className="flex justify-center items-center gap-10">
+          <div className="flex justify-center items-center gap-4">
             <VerticalTimeScroller 
               value={goalHour} 
               max={23} 
@@ -272,11 +519,20 @@ export default function App() {
                   "transition-transform duration-500 group-hover:scale-110 relative z-10",
                   mode === m ? "text-white" : "text-white/70"
                 )}>
-                  {m === 'driving' && <Car size={32} strokeWidth={1} />}
-                  {m === 'bicycling' && <Bike size={32} strokeWidth={1} />}
-                  {m === 'walking' && <Footprints size={32} strokeWidth={1} />}
+                  {m === 'driving' && <Car size={28} strokeWidth={1} />}
+                  {m === 'bicycling' && <Bike size={28} strokeWidth={1} />}
+                  {m === 'walking' && <Footprints size={28} strokeWidth={1} />}
                 </div>
-                <span className="text-[9px] font-black tracking-[0.3em] uppercase relative z-10">{labels[m]}</span>
+                <div className="flex flex-col items-center gap-1 relative z-10">
+                  <span className="text-[9px] font-black tracking-[0.2em] uppercase opacity-60">{labels[m]}</span>
+                  <span className={cn(
+                    "text-xs font-black tracking-tight",
+                    allTravelTimes[m] ? "text-green-400" : "text-white/40"
+                  )}>
+                    {formatDuration(allTravelTimes[m] || fallbackTimes[m])}
+                    {allTravelTimes[m] && <span className="text-[8px] ml-1 opacity-50">LIVE</span>}
+                  </span>
+                </div>
                 {mode === m && (
                   <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent" />
                 )}
@@ -291,8 +547,11 @@ export default function App() {
           
           <div className="space-y-4 relative z-10">
             <span className="text-[10px] font-medium opacity-40 uppercase tracking-[0.4em] text-white">Time to Departure</span>
+            
+            <AnimatedHourglass timeRemaining={timeRemainingSeconds} />
+
             <div className={cn(
-              "text-7xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl",
+              "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl",
               countdown === "Time to leave!" ? "text-white scale-105" : ""
             )}>
               {countdown || '---'}
@@ -305,27 +564,59 @@ export default function App() {
               {departureTime ? departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '--:--'}
             </div>
             
-            {/* Logic Breakdown (Educational Insight) */}
-            {travelTime && (
-              <div className="flex justify-center items-center gap-3 opacity-30 text-[8px] font-bold tracking-widest uppercase mt-4 text-white">
-                <span>Traffic {Math.floor(travelTime / 60)}m</span>
-                <div className="w-1 h-1 rounded-full bg-white/50" />
-                <span>Buffer {mode === 'driving' ? '2m' : '0m'}</span>
-                <div className="w-1 h-1 rounded-full bg-white/50" />
-                <span>Walk 55s</span>
+                {/* Logic Breakdown (Educational Insight) */}
+                {travelTime && (
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="flex justify-center items-center gap-3 opacity-30 text-[8px] font-bold tracking-widest uppercase text-white">
+                      <span className={cn(googleStatus === 'ready' && !apiError ? "text-neon-green opacity-100 animate-pulse" : "text-yellow-500 opacity-100")}>
+                        {googleStatus === 'ready' && !apiError ? '● Live Precision Data ' : (googleStatus === 'loading' ? '○ Syncing ' : '⚠ Offline ')}
+                        Traffic {Math.floor(travelTime / 60)}m
+                        {lastApiUpdate && ` (Updated: ${lastApiUpdate.toLocaleTimeString([], { hour12: false })})`}
+                      </span>
+                      <div className="w-1 h-1 rounded-full bg-white/50" />
+                      <span>Buffer {mode === 'driving' ? '2m' : '0m'}</span>
+                      <div className="w-1 h-1 rounded-full bg-white/50" />
+                      <span>Walk 55s</span>
+                    </div>
+
+                    {apiError && (
+                      <div className="text-[7px] text-red-400 font-mono uppercase tracking-tighter opacity-50">
+                        {apiError}
+                      </div>
+                    )}
+                    
+                    {/* Total Journey Breakdown */}
+                <div className="bg-white/5 rounded-2xl px-4 py-2 flex items-center gap-3 border border-white/10">
+                  <Clock size={12} className="opacity-40" />
+                  <span className="text-[10px] font-black tracking-tight text-white/40 uppercase">
+                    Total Journey: <span className="text-white opacity-100">{Math.ceil((travelTime + (mode === 'driving' ? PARKING_BUFFER : 0) + WALKING_TO_CLASSROOM) / 60)} mins</span>
+                  </span>
+                </div>
               </div>
             )}
           </div>
 
           {locationError && (
+            <div className="flex items-center justify-center gap-2 text-[9px] text-red-400 font-bold uppercase tracking-widest pt-2 relative z-10">
+              <div className="w-1 h-1 rounded-full bg-red-400 animate-pulse" />
+              {locationError}
+            </div>
+          )}
+          {!userCoords && !locationError && (
             <div className="flex items-center justify-center gap-2 text-[9px] text-white/30 font-bold uppercase tracking-widest pt-2 relative z-10">
               <div className="w-1 h-1 rounded-full bg-white/20 animate-pulse" />
-              {locationError}
+              Waiting for location...
+            </div>
+          )}
+          {userCoords && (
+            <div className="flex items-center justify-center gap-2 text-[7px] text-white/10 font-mono uppercase tracking-widest pt-2 relative z-10">
+              GPS: {userCoords.lat.toFixed(4)}, {userCoords.lng.toFixed(4)}
             </div>
           )}
         </section>
 
-        {/* Navigation Button */}
+      {/* Navigation Button */}
+      <div className="w-full space-y-4">
         <button 
           onClick={handleStartNavigation}
           className="w-full bg-white/10 hover:bg-white/20 active:scale-[0.98] transition-all duration-500 text-white border border-white/20 font-black py-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.4)] backdrop-blur-md flex items-center justify-center gap-4 text-sm uppercase tracking-[0.2em]"
@@ -333,6 +624,15 @@ export default function App() {
           <Navigation size={20} fill="currentColor" />
           Launch Navigator
         </button>
+
+        <button 
+          onClick={() => updateTrafficData(mode)}
+          className="w-full py-3 text-[10px] font-black tracking-[0.3em] uppercase opacity-40 hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
+        >
+          <Clock size={12} />
+          Sync Traffic Now
+        </button>
+      </div>
 
       </main>
 
@@ -347,13 +647,61 @@ export default function App() {
 
         {/* Footer / Privacy */}
         <div className="text-center space-y-4 pb-10">
-          <p className="text-[9px] opacity-30 leading-relaxed px-8 font-medium italic text-white">
+          {/* Hidden Debug Trigger: Click the quote 5 times to show/hide debug window */}
+          <p 
+            onClick={() => {
+              const now = Date.now();
+              const lastClick = (window as any)._lastDebugClick || 0;
+              const count = (window as any)._debugClickCount || 0;
+              
+              if (now - lastClick < 500) {
+                const newCount = count + 1;
+                if (newCount >= 5) {
+                  setShowDebug(!showDebug);
+                  (window as any)._debugClickCount = 0;
+                } else {
+                  (window as any)._debugClickCount = newCount;
+                }
+              } else {
+                (window as any)._debugClickCount = 1;
+              }
+              (window as any)._lastDebugClick = now;
+            }}
+            className="text-[9px] opacity-30 leading-relaxed px-8 font-medium italic text-white cursor-default select-none active:opacity-10"
+          >
             "The journey of a thousand miles begins with a single step."
           </p>
           <div className="flex items-center justify-center gap-3 opacity-20 text-[9px] font-black tracking-widest text-white">
             <div className="w-1 h-1 rounded-full bg-white/50 animate-pulse" />
             <span>WOODSIDE NAVIGATOR ACTIVE</span>
           </div>
+
+          {/* System Status Logs (Debug) - Now hidden by default */}
+          {showDebug && (
+            <div className="w-full mt-6 px-4 py-3 bg-black/40 rounded-2xl border border-white/5 font-mono text-[8px] text-gray-500 overflow-hidden text-left">
+              <div className="flex justify-between mb-2 border-b border-white/5 pb-1">
+                <span className="font-bold text-white/40">SYSTEM STATUS</span>
+                <span className={cn(userCoords ? "text-green-500" : "text-red-500")}>
+                  GPS: {userCoords ? `${userCoords.lat.toFixed(4)},${userCoords.lng.toFixed(4)}` : "OFF"}
+                </span>
+              </div>
+              <div className="space-y-1">
+                {systemLogs.map((log, i) => (
+                  <div key={i} className="opacity-70 flex gap-2">
+                    <span className="opacity-30">[{new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>
+                    <span>{">"} {log}</span>
+                  </div>
+                ))}
+                {systemLogs.length === 0 && <div className="opacity-30 italic">No logs yet...</div>}
+              </div>
+              <button 
+                onClick={() => setShowDebug(false)}
+                className="mt-4 w-full py-2 border border-white/10 rounded-lg text-[8px] uppercase tracking-widest hover:bg-white/5"
+              >
+                Close Debug Window
+              </button>
+            </div>
+          )}
         </div>
       </footer>
     </div>
