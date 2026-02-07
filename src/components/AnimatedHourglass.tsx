@@ -19,7 +19,7 @@ const HourglassModel = () => {
     <group ref={meshRef}>
       {/* Upper Glass Body: Y in [0.1, 1.5] */}
       <mesh position={[0, 0.8, 0]}>
-        <cylinderGeometry args={[1, 0.03, 1.4, 32, 1, true]} />
+        <cylinderGeometry args={[1, 0.03, 1.4, 64, 1, true]} />
         <meshPhysicalMaterial
           transmission={1}
           roughness={0.05}
@@ -37,7 +37,7 @@ const HourglassModel = () => {
 
       {/* Lower Glass Body: Y in [-1.5, -0.1] */}
       <mesh position={[0, -0.8, 0]}>
-        <cylinderGeometry args={[0.03, 1, 1.4, 32, 1, true]} />
+        <cylinderGeometry args={[0.03, 1, 1.4, 64, 1, true]} />
         <meshPhysicalMaterial
           transmission={1}
           roughness={0.05}
@@ -55,7 +55,7 @@ const HourglassModel = () => {
 
       {/* Glass Neck Connection: Y in [-0.1, 0.1] */}
       <mesh position={[0, 0, 0]}>
-        <cylinderGeometry args={[0.03, 0.03, 0.2, 32, 1, true]} />
+        <cylinderGeometry args={[0.03, 0.03, 0.2, 64, 1, true]} />
         <meshPhysicalMaterial
           transmission={1}
           roughness={0.05}
@@ -73,13 +73,13 @@ const HourglassModel = () => {
 
       {/* Top Cap */}
       <mesh position={[0, 1.55, 0]}>
-        <cylinderGeometry args={[1.1, 1.1, 0.1, 32]} />
+        <cylinderGeometry args={[1.1, 1.1, 0.1, 64]} />
         <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
       </mesh>
 
       {/* Bottom Cap */}
       <mesh position={[0, -1.55, 0]}>
-        <cylinderGeometry args={[1.1, 1.1, 0.1, 32]} />
+        <cylinderGeometry args={[1.1, 1.1, 0.1, 64]} />
         <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
       </mesh>
 
@@ -101,7 +101,10 @@ const HourglassModel = () => {
 export const AnimatedHourglass = () => {
   return (
     <div className="w-full h-[300px] relative">
-      <Canvas gl={{ antialias: true, alpha: true }}>
+      <Canvas 
+        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
+        dpr={[1, 2]} // Supports Retina/High-DPI displays
+      >
         <PerspectiveCamera makeDefault position={[0, 0, 5]} fov={50} />
         
         <ambientLight intensity={0.5} />

@@ -481,12 +481,20 @@ export default function App() {
           src="/wes/wes.webp" 
           alt="background"
           className="w-full h-full object-cover"
+          loading="eager"
+          // @ts-ignore
+          fetchPriority="high"
           style={{ 
             objectPosition: '65% center',
-            filter: 'brightness(0.7) contrast(1.1)'
+            filter: 'brightness(0.7) contrast(1.02) saturate(1.05)',
+            imageRendering: '-webkit-optimize-contrast',
+            WebkitBackfaceVisibility: 'hidden',
+            backfaceVisibility: 'hidden',
+            transform: 'translateZ(0)', // Force GPU acceleration for cleaner rendering
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40" />
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }} />
       </div>
       
       {/* Main Glass Dashboard */}
