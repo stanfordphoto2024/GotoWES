@@ -453,21 +453,15 @@ export default function App() {
     <div className="min-h-screen flex flex-col items-center p-6 pt-12 pb-20 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative">
       {/* Fixed Background Layer */}
       <div 
-        className="fixed z-0 pointer-events-none overflow-hidden"
+        className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
         style={{
-          top: '-10%',
-          left: '-10%',
-          right: '-10%',
-          bottom: '-10%',
-          width: '120%',
-          height: '120%',
           background: `
             radial-gradient(circle at center, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%),
             url('/wes/wes.webp') no-repeat 65% center
           `,
           backgroundSize: 'cover',
-          backgroundAttachment: 'scroll',
-          transform: 'translate3d(0,0,0)',
+          backgroundAttachment: 'fixed',
+          willChange: 'transform',
         }}
       />
       
