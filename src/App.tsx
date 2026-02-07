@@ -587,18 +587,6 @@ export default function App() {
                 {/* Logic Breakdown (Educational Insight) */}
                 {travelTime && (
                   <div className="flex flex-col items-center gap-4">
-                    <div className="flex justify-center items-center gap-3 opacity-30 text-[8px] font-bold tracking-widest uppercase text-white">
-                      <span className={cn(googleStatus === 'ready' && !apiError ? "text-neon-green opacity-100 animate-pulse" : "text-yellow-500 opacity-100")}>
-                        {googleStatus === 'ready' && !apiError ? '● Live Precision Data ' : (googleStatus === 'loading' ? '○ Syncing ' : '⚠ Offline ')}
-                        Traffic {Math.floor(travelTime / 60)}m
-                        {lastApiUpdate && ` (Updated: ${lastApiUpdate.toLocaleTimeString([], { hour12: false })})`}
-                      </span>
-                      <div className="w-1 h-1 rounded-full bg-white/50" />
-                      <span>Buffer {mode === 'driving' ? '2m' : '0m'}</span>
-                      <div className="w-1 h-1 rounded-full bg-white/50" />
-                      <span>Walk 55s</span>
-                    </div>
-
                     {apiError && (
                       <div className="text-[7px] text-red-400 font-mono uppercase tracking-tighter opacity-50">
                         {apiError}
@@ -626,11 +614,6 @@ export default function App() {
             <div className="flex items-center justify-center gap-2 text-[9px] text-white/30 font-bold uppercase tracking-widest pt-2 relative z-10">
               <div className="w-1 h-1 rounded-full bg-white/20 animate-pulse" />
               Waiting for location...
-            </div>
-          )}
-          {userCoords && (
-            <div className="flex items-center justify-center gap-2 text-[7px] text-white/10 font-mono uppercase tracking-widest pt-2 relative z-10">
-              GPS: {userCoords.lat.toFixed(4)}, {userCoords.lng.toFixed(4)}
             </div>
           )}
         </section>
@@ -701,9 +684,6 @@ export default function App() {
             <div className="w-full mt-6 px-4 py-3 bg-black/40 rounded-2xl border border-white/5 font-mono text-[8px] text-gray-500 overflow-hidden text-left">
               <div className="flex justify-between mb-2 border-b border-white/5 pb-1">
                 <span className="font-bold text-white/40">SYSTEM STATUS</span>
-                <span className={cn(userCoords ? "text-green-500" : "text-red-500")}>
-                  GPS: {userCoords ? `${userCoords.lat.toFixed(4)},${userCoords.lng.toFixed(4)}` : "OFF"}
-                </span>
               </div>
               <div className="space-y-1">
                 {systemLogs.map((log, i) => (
