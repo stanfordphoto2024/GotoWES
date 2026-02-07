@@ -452,19 +452,18 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col items-center p-6 pt-12 pb-20 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative">
       {/* Fixed Background Layer */}
-      <div 
-        className="fixed inset-0 z-0 pointer-events-none"
-        style={{
-          background: `
-            radial-gradient(circle at center, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%),
-            url('/wes/wes.webp') no-repeat 65% center
-          `,
-          backgroundSize: 'cover',
-          backgroundAttachment: 'scroll',
-          WebkitTransform: 'translate3d(0,0,0)',
-          transform: 'translate3d(0,0,0)',
-        }}
-      />
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <img 
+          src="/wes/wes.webp" 
+          alt="background"
+          className="w-full h-full object-cover"
+          style={{ 
+            objectPosition: '65% center',
+            filter: 'brightness(0.7) contrast(1.1)'
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40" />
+      </div>
       
       {/* Main Glass Dashboard */}
       <main className="w-full space-y-8 relative z-10">
