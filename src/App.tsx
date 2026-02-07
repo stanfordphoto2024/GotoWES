@@ -212,6 +212,7 @@ export default function App() {
   }, []);
 
   const [lastApiUpdate, setLastApiUpdate] = useState<Date | null>(null);
+  const fetchCount = useRef<number>(0);
 
   /**
    * Sync goalTime string whenever hour or minute changes
@@ -284,8 +285,15 @@ export default function App() {
     const isFirstTime = !lastApiUpdate;
     const isForced = !!targetMode || !!forcedCoords || isFirstTime;
 
-    if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < 5000)) {
+    // Dynamic throttling: first 3 fetches use 5s, thereafter 5m (300s)
+    const throttleLimit = fetchCount.current < 3 ? 5000 : 300000;
+    
+    if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < throttleLimit)) {
       return;
+    }
+
+    if (fetchCount.current >= 3) {
+      addLog(`Rate Limited: Next update in 5m`);
     }
 
     lastCoords.current = origin;
@@ -351,6 +359,7 @@ export default function App() {
                 return updated;
               });
               setLastApiUpdate(new Date());
+              fetchCount.current++;
               setApiError(null);
             } else {
               const elementStatus = response?.rows[0]?.elements[0]?.status || 'UNKNOWN';
