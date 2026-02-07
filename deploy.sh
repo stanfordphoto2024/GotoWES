@@ -24,9 +24,13 @@ if [ ! -d "$MAIN_SITE_PATH" ]; then
     exit 1
 fi
 
-# 3. 建立主站中的 public/wes 資料夾
+# 3. 準備目標目錄 (先清空舊檔案，除了 .git 或其他重要檔案)
 TARGET_DIR="$MAIN_SITE_PATH/public/$SUB_PATH"
-echo "📂 正在準備目標目錄: $TARGET_DIR"
+echo "📂 正在清理並準備目標目錄: $TARGET_DIR"
+# 如果目錄存在，先刪除除了 assets 以外的內容，或者直接清空 assets
+if [ -d "$TARGET_DIR" ]; then
+    rm -rf "$TARGET_DIR"/*
+fi
 mkdir -p "$TARGET_DIR"
 
 # 4. 複製編譯後的檔案
