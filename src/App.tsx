@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Car, Bike, Footprints, Navigation, Clock, ShieldAlert } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import AnimatedHourglass from './components/AnimatedHourglass';
 
 /** Utility for Tailwind class merging */
 function cn(...inputs: ClassValue[]) {
@@ -556,6 +557,10 @@ export default function App() {
           <div className="space-y-4 relative z-10">
             <span className="text-[10px] font-medium opacity-40 uppercase tracking-[0.4em] text-white">Time to Departure</span>
             
+            <div className="relative w-full flex justify-center py-4">
+              <AnimatedHourglass />
+            </div>
+
             <div className={cn(
               "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl",
               countdown === "TIME TO GO!" ? "text-white scale-105" : ""
