@@ -463,7 +463,7 @@ export default function App() {
           height: '120%',
           background: `
             radial-gradient(circle at center, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%),
-            url('/wes.png') no-repeat 68% center
+            url('/wes/wes.webp') no-repeat 68% center
           `,
           backgroundSize: 'cover',
           backgroundAttachment: 'scroll',
