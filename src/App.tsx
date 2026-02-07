@@ -15,7 +15,7 @@ const WALKING_TO_CLASSROOM = 55;
 /** Default parking/unloading buffer for driving (in seconds) */
 const PARKING_BUFFER = 120; // 改為 2 分鐘 (120秒)
 /** Default school start time goal */
-const DEFAULT_GOAL_TIME = "08:15";
+const DEFAULT_GOAL_TIME = "08:20";
 /** Destination: Woodside Elementary School */
 const DESTINATION_ADDRESS = "3195 Woodside Rd, Woodside, CA 94062";
 /** Destination Coordinates */
@@ -114,7 +114,7 @@ function VerticalTimeScroller({ value, max, onChange }: TimeScrollerProps) {
 export default function App() {
   const [goalTime, setGoalTime] = useState(DEFAULT_GOAL_TIME);
   const [goalHour, setGoalHour] = useState(8);
-  const [goalMinute, setGoalMinute] = useState(15);
+  const [goalMinute, setGoalMinute] = useState(20);
   const [mode, setMode] = useState<TransportMode>('driving');
   const [allTravelTimes, setAllTravelTimes] = useState<Record<TransportMode, number | null>>({
     driving: null,
@@ -133,9 +133,9 @@ export default function App() {
   const [departureTime, setDepartureTime] = useState<Date | null>(() => {
     // Initial calculation based on defaults
     const goalDate = new Date();
-    goalDate.setHours(8, 15, 0, 0); 
+    goalDate.setHours(8, 20, 0, 0); 
     
-    // If 08:15 has already passed today, assume it's for tomorrow
+    // If 08:20 has already passed today, assume it's for tomorrow
     if (goalDate.getTime() < Date.now()) {
       goalDate.setDate(goalDate.getDate() + 1);
     }
