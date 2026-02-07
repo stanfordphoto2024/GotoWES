@@ -231,18 +231,32 @@ export default function App() {
     const goalDate = new Date();
     goalDate.setHours(goalHour, goalMinute, 0, 0);
 
-    // If goal time has already passed today, assume it's for tomorrow
-    if (goalDate.getTime() < now.getTime()) {
-      goalDate.setDate(goalDate.getDate() + 1);
-    }
-
+    // Only set goal to tomorrow if the goal time + traffic buffer has COMPLETELY passed
+    // This allows the "Time to go!" state to persist for the remainder of the current day
     const activeMode = targetMode || mode;
     const modeBuffer = activeMode === 'driving' ? PARKING_BUFFER : 0;
     const totalDeduction = Math.round(trafficSecs + WALKING_TO_CLASSROOM + modeBuffer);
     
+    // The moment you SHOULD have left
     const departure = new Date(goalDate.getTime() - totalDeduction * 1000);
-    setDepartureTime(departure);
-    console.log(`🕒 New Departure Set: ${departure.toLocaleTimeString()} (based on ${trafficSecs}s)`);
+
+    // We jump to tomorrow if:
+    // 1. It's already a different day.
+    // 2. It's more than 4 hours past today's goal time (grace period for "Time to go!").
+    const isSameDay = now.getDate() === goalDate.getDate() && now.getMonth() === goalDate.getMonth();
+    const hasPassedDeparture = now.getTime() > departure.getTime();
+    const isWayPastGoal = now.getTime() > goalDate.getTime() + (4 * 3600 * 1000);
+
+    if (isWayPastGoal || (hasPassedDeparture && !isSameDay)) {
+      // If it's way past goal or already a different day, look forward to tomorrow
+      goalDate.setDate(goalDate.getDate() + 1);
+    } else if (hasPassedDeparture && isSameDay) {
+      // Keep today's departure time to trigger "Time to go!"
+    }
+
+    const finalDeparture = new Date(goalDate.getTime() - totalDeduction * 1000);
+    setDepartureTime(finalDeparture);
+    console.log(`🕒 New Departure Set: ${finalDeparture.toLocaleTimeString()} (based on ${trafficSecs}s)`);
   }, [goalHour, goalMinute, mode]);
 
   const lastGoogleFetchTime = useRef<number>(0);
@@ -421,8 +435,9 @@ export default function App() {
       const now = new Date();
       const diff = departureTime.getTime() - now.getTime();
       
+      // If time has passed today (within 24 hours), show "TIME TO GO!"
       if (diff <= 0) {
-        setCountdown("Time to leave!");
+        setCountdown("TIME TO GO!");
         setTimeRemainingSeconds(0);
         return;
       }
@@ -546,7 +561,7 @@ export default function App() {
 
             <div className={cn(
               "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl",
-              countdown === "Time to leave!" ? "text-white scale-105" : ""
+              countdown === "TIME TO GO!" ? "text-white scale-105" : ""
             )}>
               {countdown || '---'}
             </div>

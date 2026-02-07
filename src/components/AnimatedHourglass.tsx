@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, PerspectiveCamera, ContactShadows, Float } from '@react-three/drei';
 import * as THREE from 'three';
+import TimeLockedSand from './TimeLockedSand';
 
 interface HourglassProps {
   timeRemaining: number;
@@ -19,37 +20,62 @@ const HourglassModel = ({ timeRemaining }: HourglassProps) => {
 
   return (
     <group ref={meshRef}>
-      {/* Upper Glass Body */}
+      {/* Upper Glass Body: Y in [0.1, 1.5] */}
       <mesh position={[0, 0.8, 0]}>
-        <cylinderGeometry args={[1, 0.1, 1.5, 32, 1, true]} />
+        <cylinderGeometry args={[1, 0.03, 1.4, 32, 1, true]} />
         <meshPhysicalMaterial
           transmission={1}
-          roughness={0}
-          metalness={0}
-          thickness={0.1}
+          roughness={0.05}
+          metalness={0.05}
+          thickness={0.02}
           clearcoat={1}
-          clearcoatRoughness={0.1}
-          ior={1.5}
-          color="white"
+          clearcoatRoughness={0.05}
+          ior={1.45}
+          color="#e0f7fa"
+          transparent={true}
+          opacity={0.3}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      {/* Lower Glass Body (Inverted) */}
-      <mesh position={[0, -0.8, 0]} rotation={[Math.PI, 0, 0]}>
-        <cylinderGeometry args={[1, 0.1, 1.5, 32, 1, true]} />
+      {/* Lower Glass Body: Y in [-1.5, -0.1] */}
+      <mesh position={[0, -0.8, 0]}>
+        <cylinderGeometry args={[0.03, 1, 1.4, 32, 1, true]} />
         <meshPhysicalMaterial
           transmission={1}
-          roughness={0}
-          metalness={0}
-          thickness={0.1}
+          roughness={0.05}
+          metalness={0.05}
+          thickness={0.02}
           clearcoat={1}
-          clearcoatRoughness={0.1}
-          ior={1.5}
-          color="white"
+          clearcoatRoughness={0.05}
+          ior={1.45}
+          color="#e0f7fa"
+          transparent={true}
+          opacity={0.3}
           side={THREE.DoubleSide}
         />
       </mesh>
+
+      {/* Glass Neck Connection: Y in [-0.1, 0.1] */}
+      <mesh position={[0, 0, 0]}>
+        <cylinderGeometry args={[0.03, 0.03, 0.2, 32, 1, true]} />
+        <meshPhysicalMaterial
+          transmission={1}
+          roughness={0.05}
+          metalness={0.05}
+          thickness={0.02}
+          clearcoat={1}
+          clearcoatRoughness={0.05}
+          ior={1.45}
+          color="#e0f7fa"
+          transparent={true}
+          opacity={0.3}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Sand Particles */}
+      <TimeLockedSand timeRemaining={timeRemaining} />
 
       {/* Top Cap */}
       <mesh position={[0, 1.55, 0]}>
@@ -63,14 +89,14 @@ const HourglassModel = ({ timeRemaining }: HourglassProps) => {
         <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
       </mesh>
 
-      {/* Connecting Rods (optional but makes it look more stable) */}
+      {/* Connecting Rods */}
       {[0, 1, 2].map((i) => (
         <mesh key={i} position={[
           Math.cos(i * Math.PI * 2 / 3) * 1,
           0,
           Math.sin(i * Math.PI * 2 / 3) * 1
         ]}>
-          <cylinderGeometry args={[0.05, 0.05, 3.1, 16]} />
+          <cylinderGeometry args={[0.05, 0.05, 3.2, 16]} />
           <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
         </mesh>
       ))}
@@ -81,15 +107,13 @@ const HourglassModel = ({ timeRemaining }: HourglassProps) => {
 export const AnimatedHourglass = ({ timeRemaining }: HourglassProps) => {
   return (
     <div className="w-full h-[300px] relative">
-      <Canvas shadows gl={{ antialias: true }}>
+      <Canvas gl={{ antialias: true, alpha: true }}>
         <PerspectiveCamera makeDefault position={[0, 0, 5]} fov={50} />
         
         <ambientLight intensity={0.5} />
         <directionalLight
           position={[5, 5, 5]}
           intensity={1}
-          castShadow
-          shadow-mapSize={[1024, 1024]}
         />
         
         <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
@@ -97,13 +121,6 @@ export const AnimatedHourglass = ({ timeRemaining }: HourglassProps) => {
         </Float>
 
         <Environment preset="city" />
-        <ContactShadows
-          position={[0, -2.5, 0]}
-          opacity={0.4}
-          scale={10}
-          blur={2.5}
-          far={4.5}
-        />
       </Canvas>
     </div>
   );
