@@ -117,34 +117,13 @@ export default function App() {
   const [goalMinute, setGoalMinute] = useState(20);
   const [mode, setMode] = useState<TransportMode>('driving');
   const [allTravelTimes, setAllTravelTimes] = useState<Record<TransportMode, number | null>>({
-    driving: null,
-    bicycling: null,
-    walking: null
+    driving: 300,   // 5m * 60s
+    bicycling: 600, // 10m * 60s
+    walking: 2280   // 38m * 60s
   });
   
-  // Use a ref to store the "fallback" defaults to show when real data is null
-  const fallbackTimes = {
-    driving: 360,
-    bicycling: 540,
-    walking: 1980
-  };
-
-  const travelTime = allTravelTimes[mode] || fallbackTimes[mode];
-  const [departureTime, setDepartureTime] = useState<Date | null>(() => {
-    // Initial calculation based on defaults
-    const goalDate = new Date();
-    goalDate.setHours(8, 20, 0, 0); 
-    
-    // If 08:20 has already passed today, assume it's for tomorrow
-    if (goalDate.getTime() < Date.now()) {
-      goalDate.setDate(goalDate.getDate() + 1);
-    }
-
-    const trafficSecs = mode === 'driving' ? 360 : (mode === 'bicycling' ? 540 : 1980);
-    const modeBuffer = mode === 'driving' ? 120 : 0;
-    const totalDeduction = Math.round(trafficSecs + 55 + modeBuffer);
-    return new Date(goalDate.getTime() - totalDeduction * 1000);
-  });
+  const travelTime = allTravelTimes[mode];
+  const [departureTime, setDepartureTime] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState<string>('');
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -153,7 +132,6 @@ export default function App() {
   const [googleStatus, setGoogleStatus] = useState<'loading' | 'ready' | 'error' | 'none'>('none');
   const [apiError, setApiError] = useState<string | null>(null);
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
 
   const addLog = (msg: string) => {
     setSystemLogs(prev => [msg, ...prev].slice(0, 5));
@@ -212,6 +190,11 @@ export default function App() {
   }, []);
 
   const [lastApiUpdate, setLastApiUpdate] = useState<Date | null>(null);
+  const [isLive, setIsLive] = useState<Record<TransportMode, boolean>>({
+    driving: false,
+    bicycling: false,
+    walking: false
+  });
 
   /**
    * Sync goalTime string whenever hour or minute changes
@@ -280,16 +263,15 @@ export default function App() {
       return;
     }
 
-    // Check if position significantly moved (more than 5 meters) or forced or first time
-    const hasMoved = !lastCoords.current || calculateDistance(origin.lat, origin.lng, lastCoords.current.lat, lastCoords.current.lng) > 5;
+    // Check if position significantly moved (more than 100 meters) or forced or first time
+    const hasMoved = !lastCoords.current || calculateDistance(origin.lat, origin.lng, lastCoords.current.lat, lastCoords.current.lng) > 100;
     const isFirstTime = requestCycleCount.current === 0;
     const isForced = !!targetMode || !!forcedCoords || isFirstTime;
 
     // Throttling: 
     // - If forced or moved: allow
-    // - First 5 cycles: 10s throttle
-    // - Thereafter: 2m (120s) throttle
-    const throttleLimit = requestCycleCount.current < 5 ? 10000 : 120000;
+    // - Otherwise: 15s throttle (was 150s)
+    const throttleLimit = 15000; // 15 seconds
     
     if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < throttleLimit)) {
       return;
@@ -299,9 +281,7 @@ export default function App() {
     lastGoogleFetchTime.current = now;
     requestCycleCount.current++;
 
-    if (requestCycleCount.current > 5) {
-      addLog(`Live: Updating every 2m`);
-    }
+    addLog(`Live: Fetching all modes...`);
 
     // --- TIMEOUT PROTECTION ---
     const timeoutId = setTimeout(() => {
@@ -328,26 +308,25 @@ export default function App() {
         { m: 'walking', g: 'WALKING' }
       ];
 
-      modesToFetch.forEach(({ m, g }, index) => {
-        setTimeout(() => {
-          addLog(`> Fetching ${m}...`);
-          service.getDistanceMatrix({
-            origins: [originLatLng],
-            destinations: [destLatLng],
-            travelMode: g as any,
-            drivingOptions: m === 'driving' ? {
-              departureTime: new Date(),
-              trafficModel: 'pessimistic' as any
-            } : undefined
-          }, (response, status) => {
-            // 無論成功失敗，只要有回應就記錄狀態碼
-            if (status !== 'OK') {
-              addLog(`${m} Status: ${status}`);
-              setApiError(`Google: ${status}`);
-              return;
-            }
+      // Execute all requests in parallel for maximum speed
+      modesToFetch.forEach(({ m, g }) => {
+        addLog(`> Req ${m}...`);
+        service.getDistanceMatrix({
+          origins: [originLatLng],
+          destinations: [destLatLng],
+          travelMode: g as any,
+          drivingOptions: m === 'driving' ? {
+            departureTime: new Date(),
+            trafficModel: 'pessimistic' as any
+          } : undefined
+        }, (response, status) => {
+          if (status !== 'OK') {
+            addLog(`${m} Fail: ${status}`);
+            setApiError(`Google API Error: ${status}`);
+            return;
+          }
 
-            if (response && response.rows[0].elements[0].status === 'OK') {
+          if (response && response.rows[0].elements[0].status === 'OK') {
               clearTimeout(timeoutId);
               const element = response.rows[0].elements[0];
               const duration = element.duration_in_traffic || element.duration;
@@ -355,8 +334,10 @@ export default function App() {
               
               addLog(`${m}: ${Math.round(durationValue/60)}m OK`);
               
+              setIsLive(prev => ({ ...prev, [m as TransportMode]: true }));
               setAllTravelTimes(prev => {
                 const updated = { ...prev, [m as TransportMode]: durationValue };
+                // Always update departure time for the currently selected mode
                 if (m === (targetMode || mode)) {
                   calculateDepartureTime(durationValue, m as TransportMode);
                 }
@@ -365,12 +346,10 @@ export default function App() {
               setLastApiUpdate(new Date());
               setApiError(null);
             } else {
-              const elementStatus = response?.rows[0]?.elements[0]?.status || 'UNKNOWN';
-              addLog(`${m} Element: ${elementStatus}`);
-              setApiError(`Data: ${elementStatus}`);
-            }
-          });
-        }, index * 500); // 增加間隔到 0.5s 避免觸發頻率限制
+            const elementStatus = response?.rows[0]?.elements[0]?.status || 'UNKNOWN';
+            addLog(`${m} Error: ${elementStatus}`);
+          }
+        });
       });
     } catch (err: any) {
       addLog(`API Error: ${err.message}`);
@@ -392,10 +371,30 @@ export default function App() {
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocationError("Geolocation not supported");
-      setUserCoords({ lat: 37.4299, lng: -122.2539 });
+      // Fallback to: 745 Mountain Home Rd, Woodside, CA 94062
+      setUserCoords({ lat: 37.4246, lng: -122.2533 });
       return;
     }
 
+    // 1. Initial quick fetch
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const newCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setUserCoords(newCoords);
+        setLocationError(null);
+      },
+      (error) => {
+        console.warn("Geolocation current position error:", error);
+        // Fallback to: 745 Mountain Home Rd, Woodside, CA 94062
+        if (!userCoords) {
+          setUserCoords({ lat: 37.4246, lng: -122.2533 });
+          setLocationError("Using standby location");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+
+    // 2. Real-time watch
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const newCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
@@ -405,8 +404,9 @@ export default function App() {
       (error) => {
         console.warn("Geolocation watch error:", error);
         if (!userCoords) {
-          setUserCoords({ lat: 37.4299, lng: -122.2539 });
-          setLocationError("Using fallback location (Woodside Center)");
+          // Fallback to: 745 Mountain Home Rd, Woodside, CA 94062
+          setUserCoords({ lat: 37.4246, lng: -122.2533 });
+          setLocationError("Using standby location");
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -418,16 +418,19 @@ export default function App() {
   // Trigger traffic update whenever coordinates or mode changes
   useEffect(() => {
     if (userCoords && isGoogleLoaded) {
-      console.log("📍 Location & SDK Ready - Triggering Initial/Updated Fetch");
+      // Always trigger update when location or SDK is ready
+      // This ensures we get the latest data immediately
       updateTrafficData();
     }
-  }, [userCoords, isGoogleLoaded, mode, updateTrafficData]);
+  }, [userCoords, isGoogleLoaded, updateTrafficData]);
 
   // Regular interval for live updates
   useEffect(() => {
     const interval = setInterval(() => {
+      // Every 10 seconds, we attempt an update. 
+      // updateTrafficData internally throttles to 15s unless moved > 100m.
       updateTrafficData();
-    }, 1000); // 每一秒檢查一次，但 updateTrafficData 內部會處理節流
+    }, 10000); 
 
     return () => clearInterval(interval);
   }, [updateTrafficData]);
@@ -470,7 +473,7 @@ export default function App() {
     window.open(url, '_blank');
   };
 
-  const formatDuration = (seconds: number | null) => {
+  const formatDuration = (seconds: number | null, isLive: boolean) => {
     if (seconds === null) return '--';
     const mins = Math.ceil(seconds / 60);
     return `${mins}m`;
@@ -478,6 +481,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-6 pt-12 pb-20 max-w-lg mx-auto font-sans selection:bg-vibrant-blue/30 relative">
+      {/* ... existing code ... */}
+      {/* (Update labels and LIVE tag in the button loop) */}
       {/* Fixed Background Layer */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <img 
@@ -486,7 +491,7 @@ export default function App() {
           className="w-full h-full object-cover"
           loading="eager"
           // @ts-ignore
-          fetchPriority="high"
+          fetchpriority="high"
           style={{ 
             objectPosition: '65% center',
             filter: 'brightness(0.7) contrast(1.02) saturate(1.05)',
@@ -556,10 +561,10 @@ export default function App() {
                   <span className="text-[9px] font-black tracking-[0.2em] uppercase opacity-60">{labels[m]}</span>
                   <span className={cn(
                     "text-xs font-black tracking-tight",
-                    allTravelTimes[m] ? "text-green-400" : "text-white/40"
+                    isLive[m] ? "text-green-400" : "text-white/40"
                   )}>
-                    {formatDuration(allTravelTimes[m] || fallbackTimes[m])}
-                    {allTravelTimes[m] && <span className="text-[8px] ml-1 opacity-50">LIVE</span>}
+                    {formatDuration(allTravelTimes[m], isLive[m])}
+                    {isLive[m] && <span className="text-[8px] ml-1 opacity-50">LIVE</span>}
                   </span>
                 </div>
                 {mode === m && (
@@ -598,18 +603,44 @@ export default function App() {
                 {/* Logic Breakdown (Educational Insight) */}
                 {travelTime && (
                   <div className="flex flex-col items-center gap-4">
-                    {apiError && (
-                      <div className="text-[7px] text-red-400 font-mono uppercase tracking-tighter opacity-50">
-                        {apiError}
-                      </div>
-                    )}
-                    
                     {/* Total Journey Breakdown */}
                 <div className="bg-white/5 rounded-2xl px-4 py-2 flex items-center gap-3 border border-white/10">
                   <Clock size={12} className="opacity-40" />
                   <span className="text-[10px] font-black tracking-tight text-white/40 uppercase">
                     Total Journey: <span className="text-white opacity-100">{Math.ceil((travelTime + (mode === 'driving' ? PARKING_BUFFER : 0) + WALKING_TO_CLASSROOM) / 60)} mins</span>
                   </span>
+                </div>
+              </div>
+            )}
+
+            {/* ERROR DISPLAY */}
+            {apiError && (
+              <div className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl backdrop-blur-md">
+                <div className="flex items-start gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 animate-pulse shrink-0" />
+                  <div className="space-y-1 text-left">
+                    <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Connection Error</p>
+                    <p className="text-[10px] text-white/80 font-mono leading-relaxed break-words">{apiError}</p>
+                    
+                    {/* Actionable Advice */}
+                    {apiError.includes('REQUEST_DENIED') && (
+                      <p className="text-[9px] text-white/50 pt-2 border-t border-white/5 mt-2">
+                        • Check if "Distance Matrix API" is enabled in Google Console.<br/>
+                        • Verify API Key restrictions.<br/>
+                        • Check billing status.
+                      </p>
+                    )}
+                    {apiError.includes('OVER_QUERY_LIMIT') && (
+                      <p className="text-[9px] text-white/50 pt-2 border-t border-white/5 mt-2">
+                        • API Quota exceeded. Check billing.
+                      </p>
+                    )}
+                    {apiError.includes('ZERO_RESULTS') && (
+                      <p className="text-[9px] text-white/50 pt-2 border-t border-white/5 mt-2">
+                        • No route found. Are you overseas?
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -661,26 +692,7 @@ export default function App() {
 
         {/* Footer / Privacy */}
         <div className="text-center space-y-4 pb-10">
-          {/* Hidden Debug Trigger: Click the quote 5 times to show/hide debug window */}
           <p 
-            onClick={() => {
-              const now = Date.now();
-              const lastClick = (window as any)._lastDebugClick || 0;
-              const count = (window as any)._debugClickCount || 0;
-              
-              if (now - lastClick < 500) {
-                const newCount = count + 1;
-                if (newCount >= 5) {
-                  setShowDebug(!showDebug);
-                  (window as any)._debugClickCount = 0;
-                } else {
-                  (window as any)._debugClickCount = newCount;
-                }
-              } else {
-                (window as any)._debugClickCount = 1;
-              }
-              (window as any)._lastDebugClick = now;
-            }}
             className="text-[9px] opacity-30 leading-relaxed px-8 font-medium italic text-white cursor-default select-none active:opacity-10"
           >
             "The journey of a thousand miles begins with a single step."
@@ -691,28 +703,7 @@ export default function App() {
           </div>
 
           {/* System Status Logs (Debug) - Now hidden by default */}
-          {showDebug && (
-            <div className="w-full mt-6 px-4 py-3 bg-black/40 rounded-2xl border border-white/5 font-mono text-[8px] text-gray-500 overflow-hidden text-left">
-              <div className="flex justify-between mb-2 border-b border-white/5 pb-1">
-                <span className="font-bold text-white/40">SYSTEM STATUS</span>
-              </div>
-              <div className="space-y-1">
-                {systemLogs.map((log, i) => (
-                  <div key={i} className="opacity-70 flex gap-2">
-                    <span className="opacity-30">[{new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>
-                    <span>{">"} {log}</span>
-                  </div>
-                ))}
-                {systemLogs.length === 0 && <div className="opacity-30 italic">No logs yet...</div>}
-              </div>
-              <button 
-                onClick={() => setShowDebug(false)}
-                className="mt-4 w-full py-2 border border-white/10 rounded-lg text-[8px] uppercase tracking-widest hover:bg-white/5"
-              >
-                Close Debug Window
-              </button>
-            </div>
-          )}
+
         </div>
       </footer>
     </div>
