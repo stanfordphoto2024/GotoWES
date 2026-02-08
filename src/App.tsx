@@ -285,15 +285,20 @@ export default function App() {
     const isFirstTime = !lastApiUpdate;
     const isForced = !!targetMode || !!forcedCoords || isFirstTime;
 
-    // Dynamic throttling: first 3 fetches use 5s, thereafter 5m (300s)
-    const throttleLimit = fetchCount.current < 3 ? 5000 : 300000;
-    
-    if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < throttleLimit)) {
+    // --- NEW LOGIC: Stop automatic queries after 2 batches ---
+    // 3 modes per batch, so 2 batches = 6 fetches
+    if (!isForced && fetchCount.current >= 6) {
+      if (fetchCount.current === 6) {
+        addLog("Auto-sync limit reached (2 batches)");
+        fetchCount.current++; // Increment so we don't log again
+      }
       return;
     }
 
-    if (fetchCount.current >= 3) {
-      addLog(`Rate Limited: Next update in 5m`);
+    const throttleLimit = 5000; // 5s between 1st and 2nd batch
+    
+    if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < throttleLimit)) {
+      return;
     }
 
     lastCoords.current = origin;
@@ -420,11 +425,17 @@ export default function App() {
     }
   }, [userCoords, isGoogleLoaded, mode, updateTrafficData]);
 
-  // Regular interval for live updates
+  // Regular interval for live updates - STOPPED after 2 batches to save API quota
   useEffect(() => {
+    // Only run interval if we haven't reached the 2-batch limit
     const interval = setInterval(() => {
-      updateTrafficData();
-    }, 1000); // 每一秒檢查一次，但 updateTrafficData 內部會處理節流
+      if (fetchCount.current < 6) {
+        updateTrafficData();
+      } else {
+        // Once we hit the limit, we can clear this interval
+        clearInterval(interval);
+      }
+    }, 5000); // Check every 5s instead of 1s
 
     return () => clearInterval(interval);
   }, [updateTrafficData]);
