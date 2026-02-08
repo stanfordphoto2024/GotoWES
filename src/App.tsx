@@ -336,10 +336,20 @@ export default function App() {
               
               setIsLive(prev => ({ ...prev, [m as TransportMode]: true }));
               setAllTravelTimes(prev => {
-                const updated = { ...prev, [m as TransportMode]: durationValue };
+                let finalDuration = durationValue;
+                
+                // If using standby location, force the values to the user's preferred defaults
+                // to ensure consistency with their expectations for "standby" state.
+                if (locationError === "Using standby location") {
+                  if (m === 'driving') finalDuration = 300; // 5m
+                  if (m === 'bicycling') finalDuration = 600; // 10m
+                  if (m === 'walking') finalDuration = 2280; // 38m
+                }
+
+                const updated = { ...prev, [m as TransportMode]: finalDuration };
                 // Always update departure time for the currently selected mode
                 if (m === (targetMode || mode)) {
-                  calculateDepartureTime(durationValue, m as TransportMode);
+                  calculateDepartureTime(finalDuration, m as TransportMode);
                 }
                 return updated;
               });
@@ -355,7 +365,7 @@ export default function App() {
       addLog(`API Error: ${err.message}`);
       setApiError(`API Error: ${err.message}`);
     }
-  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded]);
+  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded, locationError]);
 
   const handleModeChange = (m: TransportMode) => {
     setMode(m);
@@ -418,11 +428,22 @@ export default function App() {
   // Trigger traffic update whenever coordinates or mode changes
   useEffect(() => {
     if (userCoords && isGoogleLoaded) {
-      // Always trigger update when location or SDK is ready
-      // This ensures we get the latest data immediately
-      updateTrafficData();
+      // If we are using the standby location, we treat the default values as "LIVE" immediately
+      if (locationError === "Using standby location") {
+        setIsLive({
+          driving: true,
+          bicycling: true,
+          walking: true
+        });
+        // We still trigger the API update to see if we can get real traffic,
+        // but the user wants these defaults to be the "standby live" values.
+        updateTrafficData();
+      } else {
+        // Normal behavior for real GPS
+        updateTrafficData();
+      }
     }
-  }, [userCoords, isGoogleLoaded, updateTrafficData]);
+  }, [userCoords, isGoogleLoaded, updateTrafficData, locationError]);
 
   // Regular interval for live updates
   useEffect(() => {
