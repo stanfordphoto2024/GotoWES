@@ -212,7 +212,6 @@ export default function App() {
   }, []);
 
   const [lastApiUpdate, setLastApiUpdate] = useState<Date | null>(null);
-  const fetchCount = useRef<number>(0);
 
   /**
    * Sync goalTime string whenever hour or minute changes
@@ -262,6 +261,7 @@ export default function App() {
 
   const lastGoogleFetchTime = useRef<number>(0);
   const lastCoords = useRef<{ lat: number, lng: number } | null>(null);
+  const requestCycleCount = useRef<number>(0);
 
   /**
    * Fetch travel time from Google Maps or fallback to distance calculation
@@ -282,20 +282,14 @@ export default function App() {
 
     // Check if position significantly moved (more than 5 meters) or forced or first time
     const hasMoved = !lastCoords.current || calculateDistance(origin.lat, origin.lng, lastCoords.current.lat, lastCoords.current.lng) > 5;
-    const isFirstTime = !lastApiUpdate;
+    const isFirstTime = requestCycleCount.current === 0;
     const isForced = !!targetMode || !!forcedCoords || isFirstTime;
 
-    // --- NEW LOGIC: Stop automatic queries after 2 batches ---
-    // 3 modes per batch, so 2 batches = 6 fetches
-    if (!isForced && fetchCount.current >= 6) {
-      if (fetchCount.current === 6) {
-        addLog("Auto-sync limit reached (2 batches)");
-        fetchCount.current++; // Increment so we don't log again
-      }
-      return;
-    }
-
-    const throttleLimit = 5000; // 5s between 1st and 2nd batch
+    // Throttling: 
+    // - If forced or moved: allow
+    // - First 5 cycles: 10s throttle
+    // - Thereafter: 2m (120s) throttle
+    const throttleLimit = requestCycleCount.current < 5 ? 10000 : 120000;
     
     if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < throttleLimit)) {
       return;
@@ -303,6 +297,11 @@ export default function App() {
 
     lastCoords.current = origin;
     lastGoogleFetchTime.current = now;
+    requestCycleCount.current++;
+
+    if (requestCycleCount.current > 5) {
+      addLog(`Live: Updating every 2m`);
+    }
 
     // --- TIMEOUT PROTECTION ---
     const timeoutId = setTimeout(() => {
@@ -364,7 +363,6 @@ export default function App() {
                 return updated;
               });
               setLastApiUpdate(new Date());
-              fetchCount.current++;
               setApiError(null);
             } else {
               const elementStatus = response?.rows[0]?.elements[0]?.status || 'UNKNOWN';
@@ -378,7 +376,7 @@ export default function App() {
       addLog(`API Error: ${err.message}`);
       setApiError(`API Error: ${err.message}`);
     }
-  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded, lastApiUpdate]);
+  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded]);
 
   const handleModeChange = (m: TransportMode) => {
     setMode(m);
@@ -425,17 +423,11 @@ export default function App() {
     }
   }, [userCoords, isGoogleLoaded, mode, updateTrafficData]);
 
-  // Regular interval for live updates - STOPPED after 2 batches to save API quota
+  // Regular interval for live updates
   useEffect(() => {
-    // Only run interval if we haven't reached the 2-batch limit
     const interval = setInterval(() => {
-      if (fetchCount.current < 6) {
-        updateTrafficData();
-      } else {
-        // Once we hit the limit, we can clear this interval
-        clearInterval(interval);
-      }
-    }, 5000); // Check every 5s instead of 1s
+      updateTrafficData();
+    }, 1000); // 每一秒檢查一次，但 updateTrafficData 內部會處理節流
 
     return () => clearInterval(interval);
   }, [updateTrafficData]);
