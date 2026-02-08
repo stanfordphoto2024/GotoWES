@@ -3,6 +3,7 @@ import { Car, Bike, Footprints, Navigation, Clock, ShieldAlert } from 'lucide-re
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import AnimatedHourglass from './components/AnimatedHourglass';
+import { fetchMapboxETA, type TransportMode } from './services/traffic';
 
 /** Utility for Tailwind class merging */
 function cn(...inputs: ClassValue[]) {
@@ -11,17 +12,15 @@ function cn(...inputs: ClassValue[]) {
 
 // --- CONSTANTS ---
 /** Calibrated time from drop-off to desk (in seconds) */
-const WALKING_TO_CLASSROOM = 55;
+const WALKING_TO_CLASSROOM = 0; // 已移除，改為 0
 /** Default parking/unloading buffer for driving (in seconds) */
-const PARKING_BUFFER = 120; // 改為 2 分鐘 (120秒)
+const PARKING_BUFFER = 0; // 已移除，改為 0
 /** Default school start time goal */
 const DEFAULT_GOAL_TIME = "08:20";
 /** Destination: Woodside Elementary School */
 const DESTINATION_ADDRESS = "3195 Woodside Rd, Woodside, CA 94062";
 /** Destination Coordinates */
 const DESTINATION_COORDS = { lat: 37.4277608, lng: -122.259141 };
-
-type TransportMode = 'driving' | 'bicycling' | 'walking';
 
 /** 
  * Calculate distance between two points using Haversine formula (in meters)
@@ -121,6 +120,11 @@ export default function App() {
     bicycling: 600, // 10m * 60s
     walking: 2280   // 38m * 60s
   });
+  const [routeDistances, setRouteDistances] = useState<Record<TransportMode, number | null>>({
+    driving: null,
+    bicycling: null,
+    walking: null
+  });
   
   const travelTime = allTravelTimes[mode];
   const [departureTime, setDepartureTime] = useState<Date | null>(null);
@@ -131,6 +135,7 @@ export default function App() {
   const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
   const [googleStatus, setGoogleStatus] = useState<'loading' | 'ready' | 'error' | 'none'>('none');
   const [apiError, setApiError] = useState<string | null>(null);
+  const [trafficProvider, setTrafficProvider] = useState<'google' | 'mapbox'>('google');
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
 
   const addLog = (msg: string) => {
@@ -138,10 +143,35 @@ export default function App() {
     console.log(`[SYS]: ${msg}`);
   };
 
+  // Add a dedicated debug log for coordinates to see what's actually being used
+  useEffect(() => {
+    if (userCoords) {
+      addLog(`Coords: ${userCoords.lat.toFixed(4)},${userCoords.lng.toFixed(4)}`);
+    }
+  }, [userCoords]);
+
+  /**
+   * Check for Mapbox Token
+   */
+  useEffect(() => {
+    const mapboxToken = (import.meta as any).env.VITE_MAPBOX_TOKEN;
+    if (mapboxToken) {
+      setTrafficProvider('mapbox');
+      addLog("Provider: Mapbox");
+    } else {
+      addLog("Provider: Google (Default)");
+    }
+  }, []);
+
   /**
    * Dynamically load Google Maps SDK
    */
   useEffect(() => {
+    // If using Mapbox, we don't strictly need Google SDK for distance matrix, 
+    // but we might keep it if we want to fallback or use it for other things.
+    // For now, let's load it anyway unless explicitly disabled, 
+    // but if trafficProvider is Mapbox, we won't use it for traffic.
+    
     const checkGoogle = () => {
       if (typeof google !== 'undefined' && google.maps && google.maps.DistanceMatrixService) {
         setIsGoogleLoaded(true);
@@ -210,15 +240,22 @@ export default function App() {
    * Formula: RequiredDeparture = GoalTime - RealTimeTraffic - WALKING_TO_CLASSROOM - ModeBuffer
    */
   const calculateDepartureTime = useCallback((trafficSecs: number, targetMode?: TransportMode) => {
+    const activeMode = targetMode || mode;
+    
+    // 根據使用者回饋調整時間係數
+    let adjustedTrafficSecs = trafficSecs;
+    if (activeMode === 'walking') {
+      adjustedTrafficSecs = trafficSecs * 1.85; // 步行 1.85x
+    } else if (activeMode === 'bicycling') {
+      adjustedTrafficSecs = trafficSecs * 1.25; // 騎車 1.25x
+    }
+
     const now = new Date();
     const goalDate = new Date();
     goalDate.setHours(goalHour, goalMinute, 0, 0);
 
-    // Only set goal to tomorrow if the goal time + traffic buffer has COMPLETELY passed
-    // This allows the "Time to go!" state to persist for the remainder of the current day
-    const activeMode = targetMode || mode;
     const modeBuffer = activeMode === 'driving' ? PARKING_BUFFER : 0;
-    const totalDeduction = Math.round(trafficSecs + WALKING_TO_CLASSROOM + modeBuffer);
+    const totalDeduction = Math.round(adjustedTrafficSecs + WALKING_TO_CLASSROOM + modeBuffer);
     
     // The moment you SHOULD have left
     const departure = new Date(goalDate.getTime() - totalDeduction * 1000);
@@ -258,7 +295,7 @@ export default function App() {
       return;
     }
 
-    if (!isGoogleLoaded) {
+    if (trafficProvider === 'google' && !isGoogleLoaded) {
       addLog("Wait: No SDK");
       return;
     }
@@ -281,7 +318,7 @@ export default function App() {
     lastGoogleFetchTime.current = now;
     requestCycleCount.current++;
 
-    addLog(`Live: Fetching all modes...`);
+    addLog(`Live: Fetching all modes (${trafficProvider})...`);
 
     // --- TIMEOUT PROTECTION ---
     const timeoutId = setTimeout(() => {
@@ -292,6 +329,48 @@ export default function App() {
     const lng = origin.lng.toFixed(4);
     addLog(`API Req @ ${lat},${lng}`);
     
+    // --- MAPBOX LOGIC ---
+    if (trafficProvider === 'mapbox') {
+      const modesToFetch = ['driving', 'bicycling', 'walking'] as TransportMode[];
+      
+      modesToFetch.forEach(async (m) => {
+        try {
+          // Use current userCoords directly from state instead of 'origin' parameter
+          // to ensure we are using the freshest react state.
+          // Note: 'origin' passed to updateTrafficData might be stale if coming from a callback closure.
+          const currentOrigin = userCoords || origin; 
+          const result = await fetchMapboxETA(currentOrigin, DESTINATION_COORDS, m);
+          
+          if (result !== null) {
+            clearTimeout(timeoutId);
+            const durationValue = result.duration;
+            const distanceValue = result.distance;
+            const rawDuration = result.duration;
+
+            addLog(`${m}: ${Math.round(rawDuration/60)}m (${(distanceValue/1000).toFixed(1)}km)`);
+            
+            setIsLive(prev => ({ ...prev, [m]: true }));
+            setRouteDistances(prev => ({ ...prev, [m]: distanceValue }));
+            setAllTravelTimes(prev => {
+              const updated = { ...prev, [m]: rawDuration };
+              if (m === (targetMode || mode)) {
+                calculateDepartureTime(rawDuration, m);
+              }
+              return updated;
+            });
+            setLastApiUpdate(new Date());
+            setApiError(null);
+          } else {
+             addLog(`${m} Fail: Null`);
+          }
+        } catch (err: any) {
+          addLog(`${m} Err: ${err.message}`);
+        }
+      });
+      return;
+    }
+
+    // --- GOOGLE LOGIC ---
     try {
       if (!google.maps.DistanceMatrixService) {
         addLog("ERR: No DM Service");
@@ -338,18 +417,10 @@ export default function App() {
               setAllTravelTimes(prev => {
                 let finalDuration = durationValue;
                 
-                // If using standby location, force the values to the user's preferred defaults
-                // to ensure consistency with their expectations for "standby" state.
-                if (locationError === "Using standby location") {
-                  if (m === 'driving') finalDuration = 300; // 5m
-                  if (m === 'bicycling') finalDuration = 600; // 10m
-                  if (m === 'walking') finalDuration = 2280; // 38m
-                }
-
-                const updated = { ...prev, [m as TransportMode]: finalDuration };
+                const updated = { ...prev, [m as TransportMode]: durationValue };
                 // Always update departure time for the currently selected mode
                 if (m === (targetMode || mode)) {
-                  calculateDepartureTime(finalDuration, m as TransportMode);
+                  calculateDepartureTime(durationValue, m as TransportMode);
                 }
                 return updated;
               });
@@ -365,7 +436,7 @@ export default function App() {
       addLog(`API Error: ${err.message}`);
       setApiError(`API Error: ${err.message}`);
     }
-  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded, locationError]);
+  }, [mode, calculateDepartureTime, userCoords, isGoogleLoaded, locationError, trafficProvider]);
 
   const handleModeChange = (m: TransportMode) => {
     setMode(m);
@@ -377,73 +448,90 @@ export default function App() {
     updateTrafficData(m);
   };
 
-  // Geolocation watch
-  useEffect(() => {
+  // Geolocation logic
+  const refreshLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setLocationError("Geolocation not supported");
-      // Fallback to: 745 Mountain Home Rd, Woodside, CA 94062
-      setUserCoords({ lat: 37.4246, lng: -122.2533 });
+      setUserCoords({ lat: 37.4419, lng: -122.1430 });
       return;
     }
 
-    // 1. Initial quick fetch
+    addLog("Locating (GPS Priority)...");
+    
+    // Strategy 1: Try High Accuracy (GPS) first
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const newCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
-        setUserCoords(newCoords);
+        const { latitude, longitude, accuracy } = position.coords;
+        setUserCoords({ lat: latitude, lng: longitude });
         setLocationError(null);
+        addLog(`GPS Fix: ${accuracy.toFixed(0)}m`);
       },
       (error) => {
-        console.warn("Geolocation current position error:", error);
-        // Fallback to: 745 Mountain Home Rd, Woodside, CA 94062
-        if (!userCoords) {
-          setUserCoords({ lat: 37.4246, lng: -122.2533 });
-          setLocationError("Using standby location");
+        // If Permission Denied, show it clearly
+        if (error.code === 1) {
+          setLocationError("Location Permission Denied");
+          addLog("ERR: Permission Denied");
+          return;
         }
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-    );
 
-    // 2. Real-time watch
+        // Strategy 2: Fallback to Low Accuracy (WiFi/IP)
+        addLog("GPS Failed, trying WiFi/IP...");
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude, accuracy } = pos.coords;
+            setUserCoords({ lat: latitude, lng: longitude });
+            setLocationError(null);
+            addLog(`WiFi Fix: ${accuracy.toFixed(0)}m`);
+          },
+          (err2) => {
+            console.warn("WiFi/IP location error:", err2);
+            if (!userCoords) {
+              setUserCoords({ lat: 37.4419, lng: -122.1430 });
+              // Only show error if explicitly denied. 
+              if (err2.code === 1) {
+                setLocationError("Location Permission Denied");
+              } else {
+                setLocationError(null);
+              }
+              addLog("Using Standby Location");
+            }
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+  }, [userCoords]);
+
+  useEffect(() => {
+    refreshLocation();
+    
+    // Continuous background watching with low power (WiFi/IP based)
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const newCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
         setUserCoords(newCoords);
         setLocationError(null);
       },
-      (error) => {
-        console.warn("Geolocation watch error:", error);
-        if (!userCoords) {
-          // Fallback to: 745 Mountain Home Rd, Woodside, CA 94062
-          setUserCoords({ lat: 37.4246, lng: -122.2533 });
-          setLocationError("Using standby location");
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      undefined,
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []); // Only once on mount
+  }, []); // Initial mount
 
   // Trigger traffic update whenever coordinates or mode changes
   useEffect(() => {
-    if (userCoords && isGoogleLoaded) {
-      // If we are using the standby location, we treat the default values as "LIVE" immediately
-      if (locationError === "Using standby location") {
-        setIsLive({
-          driving: true,
-          bicycling: true,
-          walking: true
-        });
-        // We still trigger the API update to see if we can get real traffic,
-        // but the user wants these defaults to be the "standby live" values.
+    if (userCoords) {
+      // If we have coordinates, we try to fetch traffic regardless of location error status
+      // because we might be using a fallback location that still needs traffic data.
+      if (trafficProvider === 'mapbox') {
         updateTrafficData();
-      } else {
-        // Normal behavior for real GPS
+      } else if (isGoogleLoaded) {
         updateTrafficData();
       }
     }
-  }, [userCoords, isGoogleLoaded, updateTrafficData, locationError]);
+  }, [userCoords, isGoogleLoaded, trafficProvider, updateTrafficData]);
 
   // Regular interval for live updates
   useEffect(() => {
@@ -494,9 +582,18 @@ export default function App() {
     window.open(url, '_blank');
   };
 
-  const formatDuration = (seconds: number | null, isLive: boolean) => {
+  const formatDuration = (seconds: number | null, isLive: boolean, modeForFormat: TransportMode) => {
     if (seconds === null) return '--';
-    const mins = Math.ceil(seconds / 60);
+    
+    // 應用係數調整
+     let adjustedSeconds = seconds;
+     if (modeForFormat === 'walking') {
+       adjustedSeconds = seconds * 1.85;
+     } else if (modeForFormat === 'bicycling') {
+       adjustedSeconds = seconds * 1.25;
+     }
+    
+    const mins = Math.round(adjustedSeconds / 60);
     return `${mins}m`;
   };
 
@@ -580,13 +677,20 @@ export default function App() {
                 </div>
                 <div className="flex flex-col items-center gap-1 relative z-10">
                   <span className="text-[9px] font-black tracking-[0.2em] uppercase opacity-60">{labels[m]}</span>
-                  <span className={cn(
-                    "text-xs font-black tracking-tight",
-                    isLive[m] ? "text-green-400" : "text-white/40"
-                  )}>
-                    {formatDuration(allTravelTimes[m], isLive[m])}
-                    {isLive[m] && <span className="text-[8px] ml-1 opacity-50">LIVE</span>}
-                  </span>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className={cn(
+                      "text-xs font-black tracking-tight",
+                      isLive[m] ? "text-green-400" : "text-white/40"
+                    )}>
+                      {formatDuration(allTravelTimes[m], isLive[m], m)}
+                    </span>
+                    {isLive[m] && (
+                       <div className="flex items-center gap-1 mt-1">
+                         <div className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
+                         <span className="text-green-400/80 text-[8px] font-bold uppercase tracking-tighter">Live</span>
+                       </div>
+                     )}
+                  </div>
                 </div>
                 {mode === m && (
                   <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent" />
@@ -609,7 +713,7 @@ export default function App() {
 
             <div className={cn(
               "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl",
-              countdown === "TIME TO GO!" ? "text-white scale-105" : ""
+              countdown === "TIME TO GO!" ? "animate-heartbeat text-white" : ""
             )}>
               {countdown || '---'}
             </div>
