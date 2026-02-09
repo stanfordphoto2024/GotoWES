@@ -4,7 +4,7 @@ import { Environment, PerspectiveCamera, OrbitControls } from '@react-three/drei
 import { Physics, RigidBody, InstancedRigidBodies, RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 
-const SAND_COUNT = 168;
+const SAND_COUNT = 123;
 const GRAVITY: [number, number, number] = [0, -9.8, 0];
 
 // Reuse Geometries and Materials for performance
