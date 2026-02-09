@@ -7,6 +7,31 @@ import * as THREE from 'three';
 const SAND_COUNT = 88;
 const GRAVITY: [number, number, number] = [0, -9.8, 0];
 
+// Reuse Geometries and Materials for performance
+const glassMaterial = new THREE.MeshPhysicalMaterial({
+  transmission: 1,
+  roughness: 0.05,
+  metalness: 0.05,
+  thickness: 0.02,
+  clearcoat: 1,
+  clearcoatRoughness: 0.05,
+  ior: 1.45,
+  color: "#e0f7fa",
+  transparent: true,
+  opacity: 0.3,
+  side: THREE.DoubleSide
+});
+
+const capMaterial = new THREE.MeshPhysicalMaterial({ color: "#333", metalness: 0.8, roughness: 0.2 });
+const sandMaterial = new THREE.MeshStandardMaterial({ color: "#fdd835", roughness: 0.8 });
+
+const upperGlassGeo = new THREE.CylinderGeometry(1, 0.03, 1.4, 32, 1, true);
+const lowerGlassGeo = new THREE.CylinderGeometry(0.03, 1, 1.4, 32, 1, true);
+const neckGlassGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.2, 32, 1, true);
+const capGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.1, 32);
+const rodGeo = new THREE.CylinderGeometry(0.05, 0.05, 3.2, 12);
+const sandGeo = new THREE.SphereGeometry(0.012, 8, 8);
+
 // Sand particles
 const Sand = () => {
   const rigidBodies = useRef<RapierRigidBody[]>(null);
@@ -34,16 +59,13 @@ const Sand = () => {
       ref={rigidBodies}
       instances={instances}
       colliders="ball"
-      friction={0.9} // High friction for sand pile
-      restitution={0.0} // No bounce
-      linearDamping={0.5} // Air resistance
-      angularDamping={0.2} // Rolling damping
-      ccd={true} // Continuous Collision Detection
+      friction={0.9} 
+      restitution={0.0} 
+      linearDamping={0.5} 
+      angularDamping={0.2} 
+      ccd={true} 
     >
-      <instancedMesh args={[undefined, undefined, SAND_COUNT]} castShadow receiveShadow>
-        <sphereGeometry args={[0.012, 16, 16]} />
-        <meshStandardMaterial color="#fdd835" roughness={0.8} />
-      </instancedMesh>
+      <instancedMesh args={[sandGeo, sandMaterial, SAND_COUNT]} castShadow receiveShadow />
     </InstancedRigidBodies>
   );
 };
@@ -64,82 +86,33 @@ const HourglassModel = () => {
   return (
     <RigidBody ref={api} type="kinematicPosition" colliders="trimesh" friction={0.5} restitution={0.1}>
       <group>
-        {/* Upper Glass Body: Y in [0.1, 1.5] */}
-        <mesh position={[0, 0.8, 0]}>
-          <cylinderGeometry args={[1, 0.03, 1.4, 64, 1, true]} />
-          <meshPhysicalMaterial
-            transmission={1}
-            roughness={0.05}
-            metalness={0.05}
-            thickness={0.02}
-            clearcoat={1}
-            clearcoatRoughness={0.05}
-            ior={1.45}
-            color="#e0f7fa"
-            transparent={true}
-            opacity={0.3}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+        {/* Upper Glass Body */}
+        <mesh position={[0, 0.8, 0]} geometry={upperGlassGeo} material={glassMaterial} />
 
-        {/* Lower Glass Body: Y in [-1.5, -0.1] */}
-        <mesh position={[0, -0.8, 0]}>
-          <cylinderGeometry args={[0.03, 1, 1.4, 64, 1, true]} />
-          <meshPhysicalMaterial
-            transmission={1}
-            roughness={0.05}
-            metalness={0.05}
-            thickness={0.02}
-            clearcoat={1}
-            clearcoatRoughness={0.05}
-            ior={1.45}
-            color="#e0f7fa"
-            transparent={true}
-            opacity={0.3}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+        {/* Lower Glass Body */}
+        <mesh position={[0, -0.8, 0]} geometry={lowerGlassGeo} material={glassMaterial} />
 
-        {/* Glass Neck Connection: Y in [-0.1, 0.1] */}
-        <mesh position={[0, 0, 0]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.2, 64, 1, true]} />
-          <meshPhysicalMaterial
-            transmission={1}
-            roughness={0.05}
-            metalness={0.05}
-            thickness={0.02}
-            clearcoat={1}
-            clearcoatRoughness={0.05}
-            ior={1.45}
-            color="#e0f7fa"
-            transparent={true}
-            opacity={0.3}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+        {/* Glass Neck Connection */}
+        <mesh position={[0, 0, 0]} geometry={neckGlassGeo} material={glassMaterial} />
 
         {/* Top Cap */}
-        <mesh position={[0, 1.55, 0]}>
-          <cylinderGeometry args={[1.1, 1.1, 0.1, 64]} />
-          <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
-        </mesh>
+        <mesh position={[0, 1.55, 0]} geometry={capGeo} material={capMaterial} />
 
         {/* Bottom Cap */}
-        <mesh position={[0, -1.55, 0]}>
-          <cylinderGeometry args={[1.1, 1.1, 0.1, 64]} />
-          <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
-        </mesh>
+        <mesh position={[0, -1.55, 0]} geometry={capGeo} material={capMaterial} />
 
         {/* Connecting Rods */}
         {[0, 1, 2].map((i) => (
-          <mesh key={i} position={[
-            Math.cos(i * Math.PI * 2 / 3) * 1,
-            0,
-            Math.sin(i * Math.PI * 2 / 3) * 1
-          ]}>
-            <cylinderGeometry args={[0.05, 0.05, 3.2, 16]} />
-            <meshPhysicalMaterial color="#333" metalness={0.8} roughness={0.2} />
-          </mesh>
+          <mesh 
+            key={i} 
+            geometry={rodGeo}
+            material={capMaterial}
+            position={[
+              Math.cos(i * Math.PI * 2 / 3) * 1,
+              0,
+              Math.sin(i * Math.PI * 2 / 3) * 1
+            ]} 
+          />
         ))}
       </group>
     </RigidBody>

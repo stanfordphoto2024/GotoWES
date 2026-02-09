@@ -399,6 +399,11 @@ export default function App() {
   }, [goalHour, goalMinute, mode, stopAlarm]);
 
   const lastGoogleFetchTime = useRef<number>(0);
+  const lastFetchTimes = useRef<Record<TransportMode, number>>({
+    driving: 0,
+    bicycling: 0,
+    walking: 0
+  });
   const lastCoords = useRef<{ lat: number, lng: number } | null>(null);
   const requestCycleCount = useRef<number>(0);
 
@@ -426,23 +431,40 @@ export default function App() {
 
     // Throttling: 
     // - If forced or moved: allow
-    // - Otherwise: 15s throttle (was 150s)
-    const throttleLimit = 15000; // 15 seconds
+    // - Selected mode: 30s throttle
+    // - Other modes: 120s throttle
+    const selectedThrottle = 30000;
+    const backgroundThrottle = 120000;
     
-    if (!isForced && !hasMoved && (now - lastGoogleFetchTime.current < throttleLimit)) {
-      return;
-    }
+    const isModeSelected = (m: TransportMode) => m === (targetMode || mode);
+    
+    // Check if we actually need to update
+    const needsUpdate = (m: TransportMode) => {
+      if (isForced || hasMoved) return true;
+      const lastUpdate = lastFetchTimes.current[m] || 0;
+      const throttle = isModeSelected(m) ? selectedThrottle : backgroundThrottle;
+      return (now - lastUpdate) > throttle;
+    };
+
+    const modesToUpdate = (['driving', 'bicycling', 'walking'] as TransportMode[]).filter(needsUpdate);
+
+    if (modesToUpdate.length === 0) return;
 
     lastCoords.current = origin;
-    lastGoogleFetchTime.current = now;
+    lastGoogleFetchTime.current = now; // Global last fetch for UI sync
     requestCycleCount.current++;
 
-    addLog(`Live: Fetching all modes (${trafficProvider})...`);
+    addLog(`Live: Updating ${modesToUpdate.join(', ')} (${trafficProvider})...`);
 
     // --- TIMEOUT PROTECTION ---
     const timeoutId = setTimeout(() => {
       addLog(`ERR: API Timeout (8s)`);
     }, 8000);
+
+    // Update fetch times for the modes we are about to fetch
+    modesToUpdate.forEach(m => {
+      lastFetchTimes.current[m] = now;
+    });
 
     const lat = origin.lat.toFixed(4);
     const lng = origin.lng.toFixed(4);
@@ -450,9 +472,7 @@ export default function App() {
     
     // --- MAPBOX LOGIC ---
     if (trafficProvider === 'mapbox') {
-      const modesToFetch = ['driving', 'bicycling', 'walking'] as TransportMode[];
-      
-      modesToFetch.forEach(async (m) => {
+      modesToUpdate.forEach(async (m) => {
         try {
           // Use current userCoords directly from state instead of 'origin' parameter
           // to ensure we are using the freshest react state.
