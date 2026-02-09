@@ -4,7 +4,7 @@ import { Environment, PerspectiveCamera } from '@react-three/drei';
 import { Physics, RigidBody, InstancedRigidBodies, RapierRigidBody, CylinderCollider } from '@react-three/rapier';
 import * as THREE from 'three';
 
-const SAND_COUNT = 222;
+const SAND_COUNT = 88;
 const GRAVITY: [number, number, number] = [0, -9.8, 0];
 
 // Sand particles
