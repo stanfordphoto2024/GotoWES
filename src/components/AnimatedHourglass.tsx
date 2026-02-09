@@ -23,7 +23,13 @@ const glassMaterial = new THREE.MeshPhysicalMaterial({
 });
 
 const capMaterial = new THREE.MeshPhysicalMaterial({ color: "#333", metalness: 0.8, roughness: 0.2 });
-const sandMaterial = new THREE.MeshStandardMaterial({ color: "#fdd835", roughness: 0.8 });
+const sandMaterial = new THREE.MeshStandardMaterial({ 
+  color: "#FFD700", // Classic Gold
+  metalness: 0.7,   // Add metallic sheen
+  roughness: 0.2,   // Make it smoother for better reflection
+  emissive: "#B8860B", // Dark Golden Rod for depth
+  emissiveIntensity: 0.2
+});
 
 const upperGlassGeo = new THREE.CylinderGeometry(1, 0.03, 1.4, 32, 1, true);
 const lowerGlassGeo = new THREE.CylinderGeometry(0.03, 1, 1.4, 32, 1, true);
