@@ -23,20 +23,23 @@ const glassMaterial = new THREE.MeshPhysicalMaterial({
 });
 
 const capMaterial = new THREE.MeshPhysicalMaterial({ color: "#333", metalness: 0.8, roughness: 0.2 });
-const sandMaterial = new THREE.MeshStandardMaterial({ 
-  color: "#FFD700", // Classic Gold
-  metalness: 0.7,   // Add metallic sheen
-  roughness: 0.2,   // Make it smoother for better reflection
-  emissive: "#B8860B", // Dark Golden Rod for depth
-  emissiveIntensity: 0.2
+const sandMaterial = new THREE.MeshPhysicalMaterial({ 
+  color: "#FFD700", 
+  metalness: 1.0,   // Full metallic for real gold
+  roughness: 0.1,   // Smoother for better reflections
+  reflectivity: 1.0,
+  clearcoat: 1.0,   // Add a shiny outer layer
+  clearcoatRoughness: 0.1,
+  emissive: "#8B4513", // Saddle Brown for deep gold shadows
+  emissiveIntensity: 0.1
 });
 
-const upperGlassGeo = new THREE.CylinderGeometry(1, 0.03, 1.4, 32, 1, true);
-const lowerGlassGeo = new THREE.CylinderGeometry(0.03, 1, 1.4, 32, 1, true);
-const neckGlassGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.2, 32, 1, true);
+const upperGlassGeo = new THREE.CylinderGeometry(1, 0.066, 1.4, 32, 1, true); // Neck radius 0.066
+const lowerGlassGeo = new THREE.CylinderGeometry(0.066, 1, 1.4, 32, 1, true); // Neck radius 0.066
+const neckGlassGeo = new THREE.CylinderGeometry(0.066, 0.066, 0.2, 32, 1, true); // Neck radius 0.066
 const capGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.1, 32);
 const rodGeo = new THREE.CylinderGeometry(0.05, 0.05, 3.2, 12);
-const sandGeo = new THREE.SphereGeometry(0.012, 8, 8);
+const sandGeo = new THREE.SphereGeometry(0.025, 10, 10); // Larger size (0.025) and more segments for smoothness
 
 // Sand particles
 const Sand = () => {
@@ -65,10 +68,10 @@ const Sand = () => {
       ref={rigidBodies}
       instances={instances}
       colliders="ball"
-      friction={0.9} 
-      restitution={0.0} 
-      linearDamping={0.5} 
-      angularDamping={0.2} 
+      friction={0.2} // Reduced friction from 0.9 to 0.2
+      restitution={0.1} // Increased restitution from 0.0 to 0.1
+      linearDamping={0.1} // Reduced damping from 0.5 to 0.1
+      angularDamping={0.1} // Reduced damping from 0.2 to 0.1
       ccd={true} 
     >
       <instancedMesh args={[sandGeo, sandMaterial, SAND_COUNT]} castShadow receiveShadow />
@@ -136,8 +139,7 @@ export const AnimatedHourglass = () => {
         <OrbitControls 
           enableZoom={false} 
           enablePan={false}
-          autoRotate={true}
-          autoRotateSpeed={0.5}
+          autoRotate={false}
           makeDefault
         />
         
