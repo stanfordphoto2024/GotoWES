@@ -1,6 +1,6 @@
 import { useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Environment, PerspectiveCamera, OrbitControls } from '@react-three/drei';
+import { Environment, PerspectiveCamera, PresentationControls } from '@react-three/drei';
 import { Physics, RigidBody, InstancedRigidBodies, RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 
@@ -41,6 +41,40 @@ const capGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.1, 32);
 const rodGeo = new THREE.CylinderGeometry(0.05, 0.05, 3.2, 12);
 const sandGeo = new THREE.SphereGeometry(0.025, 10, 10); // Larger size (0.025) and more segments for smoothness
 
+// Reusable Hourglass Visual Parts
+const HourglassParts = () => (
+  <group>
+    {/* Upper Glass Body */}
+    <mesh position={[0, 0.8, 0]} geometry={upperGlassGeo} material={glassMaterial} />
+
+    {/* Lower Glass Body */}
+    <mesh position={[0, -0.8, 0]} geometry={lowerGlassGeo} material={glassMaterial} />
+
+    {/* Glass Neck Connection */}
+    <mesh position={[0, 0, 0]} geometry={neckGlassGeo} material={glassMaterial} />
+
+    {/* Top Cap */}
+    <mesh position={[0, 1.55, 0]} geometry={capGeo} material={capMaterial} />
+
+    {/* Bottom Cap */}
+    <mesh position={[0, -1.55, 0]} geometry={capGeo} material={capMaterial} />
+
+    {/* Connecting Rods */}
+    {[0, 1, 2].map((i) => (
+      <mesh 
+        key={i} 
+        geometry={rodGeo}
+        material={capMaterial}
+        position={[
+          Math.cos(i * Math.PI * 2 / 3) * 1,
+          0,
+          Math.sin(i * Math.PI * 2 / 3) * 1
+        ]} 
+      />
+    ))}
+  </group>
+);
+
 // Sand particles
 const Sand = () => {
   const rigidBodies = useRef<RapierRigidBody[]>(null);
@@ -79,55 +113,32 @@ const Sand = () => {
   );
 };
 
-const HourglassModel = () => {
+// Physics Body that follows the visual target
+const HourglassPhysics = ({ target }: { target: React.RefObject<THREE.Group> }) => {
   const api = useRef<RapierRigidBody>(null);
-  const groupRef = useRef<THREE.Group>(null);
 
-  // Sync physics body with group rotation from OrbitControls
   useFrame(() => {
-    if (api.current && groupRef.current) {
-      // Set the physics body's kinematic rotation to match the visual group
-      api.current.setNextKinematicRotation(groupRef.current.quaternion);
+    if (api.current && target.current) {
+      // Sync physics rotation with the visual group's world rotation
+      const q = new THREE.Quaternion();
+      target.current.getWorldQuaternion(q);
+      api.current.setNextKinematicRotation(q);
     }
   });
 
   return (
     <RigidBody ref={api} type="kinematicPosition" colliders="trimesh" friction={0.5} restitution={0.1}>
-      <group ref={groupRef}>
-        {/* Upper Glass Body */}
-        <mesh position={[0, 0.8, 0]} geometry={upperGlassGeo} material={glassMaterial} />
-
-        {/* Lower Glass Body */}
-        <mesh position={[0, -0.8, 0]} geometry={lowerGlassGeo} material={glassMaterial} />
-
-        {/* Glass Neck Connection */}
-        <mesh position={[0, 0, 0]} geometry={neckGlassGeo} material={glassMaterial} />
-
-        {/* Top Cap */}
-        <mesh position={[0, 1.55, 0]} geometry={capGeo} material={capMaterial} />
-
-        {/* Bottom Cap */}
-        <mesh position={[0, -1.55, 0]} geometry={capGeo} material={capMaterial} />
-
-        {/* Connecting Rods */}
-        {[0, 1, 2].map((i) => (
-          <mesh 
-            key={i} 
-            geometry={rodGeo}
-            material={capMaterial}
-            position={[
-              Math.cos(i * Math.PI * 2 / 3) * 1,
-              0,
-              Math.sin(i * Math.PI * 2 / 3) * 1
-            ]} 
-          />
-        ))}
+      {/* Invisible collider mesh structure */}
+      <group visible={false}>
+        <HourglassParts />
       </group>
     </RigidBody>
   );
 };
 
 export const AnimatedHourglass = () => {
+  const visualRef = useRef<THREE.Group>(null);
+
   return (
     <div className="w-full h-[300px] relative cursor-grab active:cursor-grabbing">
       <Canvas 
@@ -136,12 +147,6 @@ export const AnimatedHourglass = () => {
         shadows
       >
         <PerspectiveCamera makeDefault position={[0, 0, 5]} fov={50} />
-        <OrbitControls 
-          enableZoom={false} 
-          enablePan={false}
-          autoRotate={false}
-          makeDefault
-        />
         
         <ambientLight intensity={0.5} />
         <directionalLight
@@ -150,8 +155,24 @@ export const AnimatedHourglass = () => {
           castShadow
         />
         
+        {/* PresentationControls for Gesture Control */}
+        <PresentationControls
+          global={false}
+          cursor={true}
+          snap={true} // Snap back to center
+          speed={1.5}
+          zoom={0.8}
+          rotation={[0, 0, 0]}
+          polar={[-Math.PI / 4, Math.PI / 4]} // Limit vertical rotation (approx 45 deg)
+          azimuth={[-Math.PI / 4, Math.PI / 4]} // Limit horizontal rotation
+        >
+          <group ref={visualRef}>
+            <HourglassParts />
+          </group>
+        </PresentationControls>
+
         <Physics gravity={GRAVITY} timeStep={1/600}>
-          <HourglassModel />
+          <HourglassPhysics target={visualRef} />
           <Sand />
         </Physics>
 
@@ -160,5 +181,6 @@ export const AnimatedHourglass = () => {
     </div>
   );
 };
+
 
 export default AnimatedHourglass;
