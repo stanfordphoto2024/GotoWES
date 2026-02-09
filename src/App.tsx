@@ -137,6 +137,116 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [trafficProvider, setTrafficProvider] = useState<'google' | 'mapbox'>('google');
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
+  
+  // --- ALARM SYSTEM ---
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const oscillatorRef = useRef<OscillatorNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const [isAlarmPlaying, setIsAlarmPlaying] = useState(false);
+  const [hasPlayedAlarm, setHasPlayedAlarm] = useState(false);
+  const justCrossedZeroRef = useRef(false);
+  const prevDiffRef = useRef<number | null>(null);
+
+  // Initialize Audio Context (Lazy Load & Unlock)
+  const initAudioContext = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      audioCtxRef.current = new AudioContext();
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().then(() => {
+        console.log("🔊 AudioContext Resumed/Unlocked");
+      }).catch(err => console.error("Audio resume failed", err));
+    }
+  }, []);
+
+  // Unlock audio on first interaction
+  useEffect(() => {
+    const unlockAudio = () => {
+        initAudioContext();
+        // Remove listeners once unlocked
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
+    return () => {
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [initAudioContext]);
+
+  const stopAlarm = useCallback(() => {
+    if (oscillatorRef.current) {
+      try {
+        oscillatorRef.current.stop();
+        oscillatorRef.current.disconnect();
+      } catch (e) {
+        // ignore
+      }
+      oscillatorRef.current = null;
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close();
+      audioCtxRef.current = null;
+    }
+    setIsAlarmPlaying(false);
+  }, []);
+
+  const playAlarm = useCallback(() => {
+    if (isAlarmPlaying) return;
+    
+    // Ensure context exists and is ready
+    initAudioContext();
+    const ctx = audioCtxRef.current;
+
+    if (!ctx) {
+        console.error("AudioContext initialization failed");
+        return;
+    }
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    // Classic Alarm Sound: Square wave, A5 (880Hz)
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    
+    // Rhythmic pattern: Beep-Beep-Beep-Beep...
+    // 0.2s ON, 0.1s OFF
+    const now = ctx.currentTime;
+    for (let i = 0; i < 200; i++) { // Schedule ~60s of beeps
+       const start = now + i * 0.3;
+       const end = start + 0.2;
+       gain.gain.setValueAtTime(0.1, start);
+       gain.gain.setValueAtTime(0, end);
+    }
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    oscillatorRef.current = osc;
+    gainNodeRef.current = gain;
+    setIsAlarmPlaying(true);
+    setHasPlayedAlarm(true);
+    
+    // Cleanup automatically after 60s
+    setTimeout(() => {
+        if (audioCtxRef.current?.state === 'running') {
+            stopAlarm();
+        }
+    }, 60000);
+  }, [isAlarmPlaying, stopAlarm]);
 
   const addLog = (msg: string) => {
     setSystemLogs(prev => [msg, ...prev].slice(0, 5));
@@ -276,8 +386,17 @@ export default function App() {
 
     const finalDeparture = new Date(goalDate.getTime() - totalDeduction * 1000);
     setDepartureTime(finalDeparture);
+    setHasPlayedAlarm(false); // Reset alarm for new departure time
+    stopAlarm(); // Stop any existing alarm
+    
+    // Reset prevDiffRef so we don't trigger alarm on large jumps
+    // unless we are already tracking a countdown.
+    // Actually, let's leave prevDiffRef alone so traffic updates don't break flow?
+    // But if goal time changed manually, we might want to reset.
+    // For now, let's NOT reset it here, but handle logic in interval.
+
     console.log(`🕒 New Departure Set: ${finalDeparture.toLocaleTimeString()} (based on ${trafficSecs}s)`);
-  }, [goalHour, goalMinute, mode]);
+  }, [goalHour, goalMinute, mode, stopAlarm]);
 
   const lastGoogleFetchTime = useRef<number>(0);
   const lastCoords = useRef<{ lat: number, lng: number } | null>(null);
@@ -561,10 +680,22 @@ export default function App() {
       
       // If time has passed today (within 24 hours), show "TIME TO GO!"
       if (diff <= 0) {
+        // If we were counting down (previous tick was positive), mark trigger
+        // Also check if jump wasn't too massive (e.g. < 5 seconds jump) to ensure it's a countdown
+        // But traffic updates might cause jumps. Let's just trust prev > 0.
+        if (prevDiffRef.current !== null && prevDiffRef.current > 0) {
+           justCrossedZeroRef.current = true;
+           console.log(`⏰ Trigger Armed! (Prev: ${prevDiffRef.current}, Curr: ${diff})`);
+        }
+
         setCountdown("TIME TO GO!");
         setTimeRemainingSeconds(0);
+        prevDiffRef.current = diff;
         return;
       }
+
+      // Mark that we have seen a valid countdown state (> 0)
+      prevDiffRef.current = diff;
 
       setTimeRemainingSeconds(Math.floor(diff / 1000));
       const h = Math.floor(diff / 3600000);
@@ -576,6 +707,15 @@ export default function App() {
     
     return () => clearInterval(timer);
   }, [departureTime]);
+
+  // Trigger Alarm logic
+  useEffect(() => {
+    if (countdown === "TIME TO GO!" && !hasPlayedAlarm && !isAlarmPlaying && justCrossedZeroRef.current) {
+      console.log("🔔 Attempting to play alarm...");
+      playAlarm();
+      justCrossedZeroRef.current = false; // Consume trigger
+    }
+  }, [countdown, hasPlayedAlarm, isAlarmPlaying, playAlarm]);
 
   const handleStartNavigation = () => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(DESTINATION_ADDRESS)}&travelmode=${mode}`;
@@ -711,11 +851,18 @@ export default function App() {
               <AnimatedHourglass />
             </div>
 
-            <div className={cn(
-              "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl",
-              countdown === "TIME TO GO!" ? "animate-heartbeat text-white" : ""
+            <div 
+              onClick={countdown === "TIME TO GO!" ? stopAlarm : undefined}
+              className={cn(
+              "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl select-none",
+              countdown === "TIME TO GO!" ? "animate-heartbeat text-white cursor-pointer hover:scale-105 active:scale-95" : ""
             )}>
               {countdown || '---'}
+              {countdown === "TIME TO GO!" && isAlarmPlaying && (
+                <div className="text-[10px] font-bold text-red-500 mt-2 tracking-widest animate-pulse">
+                  TAP TO STOP ALARM
+                </div>
+              )}
             </div>
           </div>
           
