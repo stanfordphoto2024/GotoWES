@@ -1,7 +1,7 @@
-import { useRef, useMemo, useEffect } from 'react';
+import { useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Environment, PerspectiveCamera } from '@react-three/drei';
-import { Physics, RigidBody, InstancedRigidBodies, RapierRigidBody, CylinderCollider } from '@react-three/rapier';
+import { Environment, PerspectiveCamera, OrbitControls } from '@react-three/drei';
+import { Physics, RigidBody, InstancedRigidBodies, RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 
 const SAND_COUNT = 88;
@@ -72,20 +72,19 @@ const Sand = () => {
 
 const HourglassModel = () => {
   const api = useRef<RapierRigidBody>(null);
+  const groupRef = useRef<THREE.Group>(null);
 
-  // Rotate the hourglass
-  useFrame((state) => {
-    if (api.current) {
-      // Kinematic rotation
-      const t = state.clock.getElapsedTime();
-      const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, t * 0.3, 0));
-      api.current.setNextKinematicRotation(rotation);
+  // Sync physics body with group rotation from OrbitControls
+  useFrame(() => {
+    if (api.current && groupRef.current) {
+      // Set the physics body's kinematic rotation to match the visual group
+      api.current.setNextKinematicRotation(groupRef.current.quaternion);
     }
   });
 
   return (
     <RigidBody ref={api} type="kinematicPosition" colliders="trimesh" friction={0.5} restitution={0.1}>
-      <group>
+      <group ref={groupRef}>
         {/* Upper Glass Body */}
         <mesh position={[0, 0.8, 0]} geometry={upperGlassGeo} material={glassMaterial} />
 
@@ -121,13 +120,20 @@ const HourglassModel = () => {
 
 export const AnimatedHourglass = () => {
   return (
-    <div className="w-full h-[300px] relative">
+    <div className="w-full h-[300px] relative cursor-grab active:cursor-grabbing">
       <Canvas 
         gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
         dpr={[1, 2]}
         shadows
       >
         <PerspectiveCamera makeDefault position={[0, 0, 5]} fov={50} />
+        <OrbitControls 
+          enableZoom={false} 
+          enablePan={false}
+          autoRotate={true}
+          autoRotateSpeed={0.5}
+          makeDefault
+        />
         
         <ambientLight intensity={0.5} />
         <directionalLight
