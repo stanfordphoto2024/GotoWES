@@ -956,7 +956,7 @@ export default function App() {
       <div className="w-full space-y-4">
         <button 
           onClick={handleStartNavigation}
-          className="w-full bg-white/10 hover:bg-white/20 active:scale-[0.98] transition-all duration-500 text-white border border-white/20 font-black py-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.4)] backdrop-blur-md flex items-center justify-center gap-4 text-sm uppercase tracking-[0.2em]"
+          className="w-full bg-white/10 hover:bg-white/20 active:scale-[0.98] transition-all duration-500 text-white border border-white/20 font-black py-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.4)] backdrop-blur-md flex items-center justify-center gap-4 text-sm uppercase tracking-[0.2em] select-none"
         >
           <Navigation size={20} fill="currentColor" />
           Launch Navigator
@@ -964,7 +964,7 @@ export default function App() {
 
         <button 
           onClick={() => updateTrafficData(mode)}
-          className="w-full py-3 text-[10px] font-black tracking-[0.3em] uppercase opacity-40 hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
+          className="w-full py-3 text-[10px] font-black tracking-[0.3em] uppercase opacity-40 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 select-none"
         >
           <Clock size={12} />
           Sync Traffic Now
@@ -975,7 +975,7 @@ export default function App() {
 
       {/* Safety Header (Moved to Bottom) */}
       <footer className="w-full mt-12 space-y-8">
-        <div className="w-full bg-white/5 border border-white/10 text-white/60 p-5 rounded-2xl flex items-center gap-4 backdrop-blur-sm">
+        <div className="w-full bg-white/5 border border-white/10 text-white/60 p-5 rounded-2xl flex items-center gap-4 backdrop-blur-sm select-none">
           <ShieldAlert size={18} className="shrink-0 opacity-50" />
           <p className="text-[9px] font-bold uppercase tracking-[0.2em] leading-relaxed">
             Safety Warning: Do not operate while driving. Configure settings before transit.
@@ -985,11 +985,11 @@ export default function App() {
         {/* Footer / Privacy */}
         <div className="text-center space-y-4 pb-10">
           <p 
-            className="text-[9px] opacity-30 leading-relaxed px-8 font-medium italic text-white cursor-default select-none active:opacity-10"
+            className="text-[9px] opacity-30 leading-relaxed px-8 font-medium italic text-white cursor-default select-none"
           >
             "The journey of a thousand miles begins with a single step."
           </p>
-          <div className="flex items-center justify-center gap-3 opacity-20 text-[9px] font-black tracking-widest text-white">
+          <div className="flex items-center justify-center gap-3 opacity-20 text-[9px] font-black tracking-widest text-white select-none">
             <div className="w-1 h-1 rounded-full bg-white/50 animate-pulse" />
             <span>WOODSIDE NAVIGATOR ACTIVE</span>
           </div>
