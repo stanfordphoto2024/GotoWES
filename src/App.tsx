@@ -861,13 +861,11 @@ export default function App() {
         </section>
 
         {/* Result Panel - Balanced for Time Management */}
-        <section className="glass rounded-[3rem] p-12 text-center space-y-12 border-white/10 relative overflow-hidden select-none">
+        <section className="glass rounded-[3rem] px-12 pb-12 pt-1 text-center space-y-12 border-white/10 relative overflow-hidden select-none">
           <div className="absolute -top-24 -right-24 w-64 h-64 bg-white/5 rounded-full blur-[100px]" />
           
-          <div className="space-y-4 relative z-10">
-            <span className="text-[10px] font-medium opacity-40 uppercase tracking-[0.4em] text-white">Time to Departure</span>
-            
-            <div className="relative w-full flex justify-center py-4">
+          <div className="space-y-4 relative z-10 -mt-10">
+            <div className="relative w-full flex justify-center py-0">
               <AnimatedHourglass />
             </div>
 
