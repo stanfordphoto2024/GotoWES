@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Car, Bike, Footprints, Navigation, Clock, ShieldAlert } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import AnimatedHourglass from './components/AnimatedHourglass';
+import AnimatedHourglass, { HourglassHandle } from './components/AnimatedHourglass';
 import { fetchMapboxETA, type TransportMode } from './services/traffic';
 
 /** Utility for Tailwind class merging */
@@ -137,6 +137,7 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [trafficProvider, setTrafficProvider] = useState<'google' | 'mapbox'>('google');
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
+  const hourglassRef = useRef<HourglassHandle>(null);
   
   // --- ALARM SYSTEM ---
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -860,16 +861,27 @@ export default function App() {
           })}
         </section>
 
+        <button 
+          onClick={() => {
+            updateTrafficData(mode);
+            hourglassRef.current?.reset();
+          }}
+          className="w-full py-3 text-[10px] font-black tracking-[0.3em] uppercase opacity-40 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 select-none -mt-4"
+        >
+          <Clock size={12} />
+          Sync Traffic Now
+        </button>
+
         {/* Result Panel - Balanced for Time Management */}
         <section className="glass rounded-[3rem] px-12 pb-12 pt-1 text-center space-y-12 border-white/10 relative overflow-hidden select-none">
           <div className="absolute -top-24 -right-24 w-64 h-64 bg-white/5 rounded-full blur-[100px]" />
           
           <div className="space-y-4 relative z-10 -mt-10">
             <div className="relative w-full flex justify-center py-0">
-              <AnimatedHourglass />
+              <AnimatedHourglass ref={hourglassRef} />
             </div>
 
-            <div 
+            <div  
               onClick={countdown === "TIME TO GO!" ? stopAlarm : undefined}
               className={cn(
               "text-4xl font-black tracking-tight transition-all duration-700 text-white drop-shadow-2xl select-none",
@@ -885,21 +897,21 @@ export default function App() {
           </div>
           
           <div className="pt-10 border-t border-white/10 space-y-4 relative z-10">
-            <span className="text-[10px] font-black tracking-[0.5em] uppercase opacity-40 text-white">Recommended Departure</span>
+            <span className="text-[10px] font-black tracking-[0.5em] uppercase opacity-40 text-white whitespace-nowrap">Recommended Departure</span>
             <div className="text-5xl font-black text-white tracking-tight leading-none py-2 opacity-90">
               {departureTime ? departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '--:--'}
+            </div>
+
+            <div className="flex items-center justify-center gap-2 opacity-30 pt-2 px-4">
+              <ShieldAlert size={12} className="shrink-0" />
+              <p className="text-[8px] font-bold uppercase tracking-[0.1em] leading-relaxed">
+                Safety Warning: Do not operate while driving. Configure settings before transit.
+              </p>
             </div>
             
                 {/* Logic Breakdown (Educational Insight) */}
                 {travelTime && (
                   <div className="flex flex-col items-center gap-4">
-                    {/* Total Journey Breakdown */}
-                <div className="bg-white/5 rounded-2xl px-4 py-2 flex items-center gap-3 border border-white/10">
-                  <Clock size={12} className="opacity-40" />
-                  <span className="text-[10px] font-black tracking-tight text-white/40 uppercase">
-                    Total Journey: <span className="text-white opacity-100">{Math.ceil((travelTime + (mode === 'driving' ? PARKING_BUFFER : 0) + WALKING_TO_CLASSROOM) / 60)} mins</span>
-                  </span>
-                </div>
               </div>
             )}
 
@@ -959,41 +971,21 @@ export default function App() {
           <Navigation size={20} fill="currentColor" />
           Launch Navigator
         </button>
-
-        <button 
-          onClick={() => updateTrafficData(mode)}
-          className="w-full py-3 text-[10px] font-black tracking-[0.3em] uppercase opacity-40 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 select-none"
-        >
-          <Clock size={12} />
-          Sync Traffic Now
-        </button>
       </div>
 
       </main>
 
       {/* Safety Header (Moved to Bottom) */}
-      <footer className="w-full mt-12 space-y-8">
-        <div className="w-full bg-white/5 border border-white/10 text-white/60 p-5 rounded-2xl flex items-center gap-4 backdrop-blur-sm select-none">
-          <ShieldAlert size={18} className="shrink-0 opacity-50" />
-          <p className="text-[9px] font-bold uppercase tracking-[0.2em] leading-relaxed">
-            Safety Warning: Do not operate while driving. Configure settings before transit.
-          </p>
-        </div>
-
+      <footer className="w-full mt-6 space-y-4">
         {/* Footer / Privacy */}
-        <div className="text-center space-y-4 pb-10">
+        <div className="text-center pb-10">
           <p 
             className="text-[9px] opacity-30 leading-relaxed px-8 font-medium italic text-white cursor-default select-none"
           >
             "The journey of a thousand miles begins with a single step."
           </p>
-          <div className="flex items-center justify-center gap-3 opacity-20 text-[9px] font-black tracking-widest text-white select-none">
-            <div className="w-1 h-1 rounded-full bg-white/50 animate-pulse" />
-            <span>WOODSIDE NAVIGATOR ACTIVE</span>
-          </div>
 
           {/* System Status Logs (Debug) - Now hidden by default */}
-
         </div>
       </footer>
     </div>

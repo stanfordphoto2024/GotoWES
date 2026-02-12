@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, forwardRef } from 'react';
+import { useRef, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, PerspectiveCamera, OrbitControls } from '@react-three/drei';
 import { Physics, RigidBody, InstancedRigidBodies, RapierRigidBody } from '@react-three/rapier';
@@ -166,7 +166,7 @@ const Sand = forwardRef<RapierRigidBody[], any>((props, ref) => {
       angularDamping={0.5} // Increased damping to reduce rolling
       ccd={true} 
     >
-      <instancedMesh args={[sandGeo, sandMaterial, SAND_COUNT]} />
+      <instancedMesh args={[sandGeo, sandMaterial, SAND_COUNT]} castShadow={false} receiveShadow={false} />
     </InstancedRigidBodies>
   );
 });
@@ -187,13 +187,13 @@ const HourglassModel = forwardRef<RapierRigidBody, any>((props, ref) => {
     <RigidBody ref={api} type="kinematicPosition" colliders="trimesh" friction={0.1} restitution={0.1}>
       <group ref={groupRef}>
         {/* Single Lathe Glass Body */}
-        <mesh geometry={glassGeo} material={glassMaterial} />
+        <mesh geometry={glassGeo} material={glassMaterial} castShadow receiveShadow />
 
         {/* Top Cap */}
-        <mesh position={[0, 1.55, 0]} geometry={capGeo} material={capMaterial} />
+        <mesh position={[0, 1.55, 0]} geometry={capGeo} material={capMaterial} castShadow receiveShadow />
 
         {/* Bottom Cap */}
-        <mesh position={[0, -1.55, 0]} geometry={capGeo} material={capMaterial} />
+        <mesh position={[0, -1.55, 0]} geometry={capGeo} material={capMaterial} castShadow receiveShadow />
 
         {/* Connecting Rods */}
         {[0, 1, 2].map((i) => (
@@ -201,6 +201,8 @@ const HourglassModel = forwardRef<RapierRigidBody, any>((props, ref) => {
             key={i} 
             geometry={rodGeo}
             material={capMaterial}
+            castShadow
+            receiveShadow
             position={[
               Math.cos(i * Math.PI * 2 / 3) * 1,
               0,
@@ -213,9 +215,41 @@ const HourglassModel = forwardRef<RapierRigidBody, any>((props, ref) => {
   );
 });
 
-export const AnimatedHourglass = () => {
+export interface HourglassHandle {
+  reset: () => void;
+}
+
+export const AnimatedHourglass = forwardRef<HourglassHandle, any>((props, ref) => {
   const sandBodies = useRef<RapierRigidBody[]>(null);
   const hourglassBody = useRef<RapierRigidBody>(null);
+
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      if (sandBodies.current) {
+        sandBodies.current.forEach((body) => {
+          // Reset position to upper chamber
+          const y = 0.2 + Math.random() * 0.6;
+          const maxRadius = getGlassRadius(y) - 0.04;
+          const r = Math.max(0, maxRadius) * Math.sqrt(Math.random());
+          const theta = Math.random() * 2 * Math.PI;
+          const x = r * Math.cos(theta);
+          const z = r * Math.sin(theta);
+          
+          body.setTranslation({ x, y, z }, true);
+          body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+          body.wakeUp();
+        });
+      }
+      
+      // Optionally reset hourglass rotation if needed, 
+      // but OrbitControls controls the view, so physics body follows.
+      // If we wanted to force reset orientation:
+      // if (hourglassBody.current) {
+      //   hourglassBody.current.setNextKinematicRotation({ x: 0, y: 0, z: 0, w: 1 });
+      // }
+    }
+  }));
 
   return (
     <div className="w-[200px] mx-auto h-[300px] relative cursor-grab active:cursor-grabbing">
@@ -251,6 +285,6 @@ export const AnimatedHourglass = () => {
       </Canvas>
     </div>
   );
-};
+});
 
 export default AnimatedHourglass;
